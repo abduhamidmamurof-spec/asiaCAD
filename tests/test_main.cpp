@@ -4813,3 +4813,29 @@ TEST(tpl_geo_fit_and_cli) {
     CHECK(s.find("X=4612345.120, Y=512300.500; balandlik siljishi +412.300 m; burilish 90.0000") != std::string::npos);
     CHECK(s.find("Metall:") != std::string::npos);
 }
+TEST(rebar_prota_table) {
+    // ProtaStructure donatı tablosu: POZ | ÇAP | ADET | BOY (cm) | Ø ustunida umumiy uzunlik; ostida TOPLAM BOY / TOPLAM AĞIRLIK
+    Document doc;
+    auto T = [&](double x, double y, const char* s) { doc.add(std::make_unique<TextEntity>(Vec3{x, y, 0}, 6.25, s)); };
+    T(0, 100, "POZ"); T(24, 100, "\xC3\x87" "AP"); T(51, 100, "ADET"); T(86, 100, "BOY"); T(200, 80, "\xC6\x92" "12"); T(230, 80, "\xC6\x92" "20");
+    T(0, 60, "1"); T(24, 60, "12"); T(51, 60, "100"); T(86, 60, "75"); T(200, 60, "75");
+    T(0, 40, "2"); T(24, 40, "20"); T(51, 40, "10"); T(86, 40, "500"); T(230, 40, "51");   // xato: 10 × 5 m = 50 m
+    T(-5, 20, "TOPLAM BOY / TOTAL LENGTH (m)"); T(200, 20, "75"); T(230, 20, "51");
+    T(-5, 0, "TOPLAM A\xC4\x9EIRLIK / TOTAL WEIGHT (kg)"); T(215, 0, "190");
+    const auto spec = bim::readSpecification(doc);
+    CHECK(spec.size() == 2);
+    if (spec.size() == 2) {
+        CHECK(spec[0].pos == 1 && spec[0].count == 100 && std::abs(spec[0].d - 0.012) < 1e-9 && std::abs(spec[0].length - 0.75) < 1e-9);
+        CHECK(std::abs(spec[0].listedLength - 75) < 1e-9 && std::abs(spec[1].listedLength - 51) < 1e-9);
+        CHECK(spec[0].table == 1 && std::abs(spec[0].tableMass - 190) < 1e-9);
+        CHECK(std::abs(spec[0].mass - 75 * 0.888) < 0.1);
+    }
+    // importRebar: satır xatosi (10 × 500 sm ≠ 51 m) va jadval massasi (66.6 + 123.3 ≈ 190) tekshiriladi
+    bim::BuildingModel bm;
+    const auto R = bim::importRebar({{&doc, bim::ElemKind::Column, 1, 1, "T"}}, bm);
+    bool rowErr = false, tableErr = false;
+    for (const auto& is : R.issues) { rowErr |= is.key == "rbi.chk.prota_row"; tableErr |= is.key == "rbi.chk.prota_table"; }
+    CHECK(rowErr);
+    CHECK(!tableErr);
+    CHECK(R.schedule.size() == 2 && std::abs(R.totalMass - (75 * 0.888 + 50 * 2.466)) < 0.5);
+}

@@ -165,6 +165,13 @@ Notekis masshtabli blokdagi aylana/yoy — poliliniya (ogohlantirish bilan). Pap
 - Turkcha (ProtaStructure "PM-...") qatlamlari: PM-KOLON — ustun, PERDE — devor, PM-DÖŞEME — plita, REZERVASYON — teshik;
   ÖLÇÜ, KOT, AKS, TARAMA, KESİT, ANTET, PAFTA, DARALMA, BASAMAK va h.k. — izoh, element emas. KİRİŞ (to'sin) — hali hisoblanmaydi.
 
+## ProtaStructure donatı tabloları — Donatı 3D menyusida (v0.32) — `bim/rebar_import`
+
+- KJ chizmasi sifatida qo'shilgan ProtaStructure varaqlari (CDT, BDT, FWP, FDP...): `POZ | ÇAP | ADET | BOY` jadvallari varaqdagi
+  hammasi o'qiladi; sterjenlar chizilmagan — jadval Metraj ro'yxatiga (poz, Ø, uzunlik, soni, massa) o'tadi.
+- Tekshiruv (Kontrol): har pozda adet × boy = jadvaldagi umumiy uzunlik (`rbi.chk.prota_row`), jadval massasi = pozlar
+  yig'indisi (`rbi.chk.prota_table`), varaq bo'yicha jami (`rbi.chk.prota_ok`). Test: `rebar_prota_table`.
+
 ## Armatura 3D (v0.12) — `src/bim/rebar.*`
 
 - Bino modelidan fundamentdan tomgacha avtomatik karkas: fundament plitasi/lenta — pastki va yuqori to'r + stullar;

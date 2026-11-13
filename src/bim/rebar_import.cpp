@@ -150,6 +150,102 @@ std::vector<SpecRow> readSpecification(const Document& doc, BBox* region) {
             if (u.find(upper(k)) != std::string::npos) return true;
         return false;
     };
+    // ---- ProtaStructure (turkcha): "POZ | ÇAP | ADET | BOY (cm) | shakl | Ø ustunlarida umumiy uzunlik (m)",
+    //      ostida "TOPLAM BOY", "BIRIM AĞIRLIK", "AĞIRLIK", "TOPLAM AĞIRLIK". Varaqda bir nechta jadval — hammasi o'qiladi.
+    {
+        auto pureNum = [](const std::string& s0, double& v) {
+            const std::string n = normText(s0);
+            std::size_t e = 0;
+            if (!num(n, 0, v, &e)) return false;
+            return n.find_first_not_of(" ", e) == std::string::npos && n.find_first_not_of(" ") == n.find_first_of("0123456789");
+        };
+        int tableNo = 0;
+        for (const auto& hdr : ts) {
+            if (upper(hdr.s) != "POZ") continue;
+            const double h = std::max(hdr.h, 1e-6);
+            double xCap = 1e18, xAdet = 1e18, xBoy = 1e18;
+            for (const auto& o : ts) {
+                if (std::abs(o.y - hdr.y) > h * 0.8 || o.x < hdr.x || o.x > hdr.x + h * 30) continue;
+                const std::string u = upper(o.s);
+                if (u == "\xC3\x87" "AP" || u == "CAP") xCap = o.x;
+                else if (u == "ADET") xAdet = o.x;
+                else if (u == "BOY") xBoy = o.x;
+            }
+            if (xCap > 1e17 || xAdet > 1e17 || xBoy > 1e17) continue;
+            // jadval oxiri: pastdagi birinchi "TOPLAM" (TOPLAM BOY / ...)
+            double yEnd = -1e18;
+            for (const auto& o : ts)
+                if (o.y < hdr.y && std::abs(o.x - hdr.x) < h * 4 && upper(o.s).rfind("TOPLAM", 0) == 0) yEnd = std::max(yEnd, o.y);
+            if (yEnd < -1e17) continue;
+            // jadval massasi: "TOPLAM AĞIRLIK" (birinchisi — bir qavat) qatoridagi son
+            double tMass = 0;
+            {
+                double yT = -1e18;
+                for (const auto& o : ts) {
+                    const std::string u = upper(o.s);
+                    if (o.y < yEnd && o.y > yEnd - h * 30 && std::abs(o.x - hdr.x) < h * 4 && u.rfind("TOPLAM A", 0) == 0) yT = std::max(yT, o.y);
+                }
+                double bx = 1e18;
+                for (const auto& o : ts) {
+                    double v;
+                    if (yT > -1e17 && std::abs(o.y - yT) < h * 0.5 && o.x > hdr.x && o.x - hdr.x < bx && pureNum(o.s, v)) { bx = o.x - hdr.x; tMass = v; }
+                }
+            }
+            // Ø ustunlari (sarlavhadagi "ƒ12", "Ø20")
+            std::vector<std::pair<double, int>> dcols;
+            for (const auto& o : ts) {
+                if (o.x <= xBoy || o.y > hdr.y + h * 2 || o.y < hdr.y - h * 6) continue;
+                std::string s = normText(o.s);
+                for (const char* g : {"\xC6\x92", "\xCF\x86"}) {   // ƒ, φ
+                    for (std::size_t p; (p = s.find(g)) != std::string::npos;) s.replace(p, std::strlen(g), "@");
+                }
+                double v;
+                if (s.size() > 1 && s[0] == '@' && pureNum(s.substr(1), v) && v >= 6 && v <= 50) dcols.push_back({o.x, static_cast<int>(v)});
+            }
+            ++tableNo;
+            std::vector<T> body;
+            for (const auto& o : ts)
+                if (o.y < hdr.y - h && o.y > yEnd && o.x > hdr.x - h * 2) body.push_back(o);
+            const std::size_t first = out.size();
+            for (const auto& p : body) {
+                double vp;
+                if (std::abs(p.x - hdr.x) > h * 1.2 || !pureNum(p.s, vp) || vp != std::floor(vp)) continue;
+                auto at = [&](double cx) {
+                    double best = 1e18, val = -1;
+                    for (const auto& c : body) {
+                        double v;
+                        if (std::abs(c.y - p.y) < h * 0.45 && std::abs(c.x - cx) < h * 1.6 && std::abs(c.x - cx) < best && pureNum(c.s, v)) { best = std::abs(c.x - cx); val = v; }
+                    }
+                    return val;
+                };
+                const double d = at(xCap), cnt = at(xAdet), boy = at(xBoy);
+                if (d < 6 || d > 50 || cnt <= 0 || boy <= 0) continue;
+                SpecRow r;
+                r.pos = static_cast<int>(vp);
+                r.d = d / 1000;
+                r.count = static_cast<int>(std::lround(cnt));
+                r.length = boy / 100;
+                r.massEach = r.length * massPerM(r.d);
+                r.mass = r.massEach * r.count;
+                r.table = tableNo;
+                r.tableMass = tMass;
+                double bestL = 1e18;
+                for (const auto& [dx, dd] : dcols) {
+                    const double v = at(dx);
+                    const double score = std::abs(dd - d) * 1000 + 0;
+                    if (v > 0 && score < bestL) { bestL = score; r.listedLength = v; }
+                }
+                r.text = std::format("POZ {} \xC3\x98{} {} \xC3\x97 {} cm", r.pos, static_cast<int>(d), r.count, boy);
+                out.push_back(r);
+            }
+            std::sort(out.begin() + static_cast<std::ptrdiff_t>(first), out.end(), [](const SpecRow& a, const SpecRow& b) { return a.pos < b.pos; });
+            if (region && out.size() > first) {
+                region->expand({hdr.x - h * 4, hdr.y + h * 2, 0});
+                region->expand({hdr.x + h * 140, yEnd - h * 30, 0});
+            }
+        }
+        if (!out.empty()) return out;
+    }
     for (const auto& hdr : ts) {
         if (!has(hdr.s, {"ПОЗ", "POZ", "POS"}) || hdr.s.find('@') != std::string::npos || normText(hdr.s).find('@') != std::string::npos) continue;
         const double tol = std::max(hdr.h, 1e-6) * 1.2;
@@ -246,6 +342,29 @@ ImportedRebar importRebar(const std::vector<RebarSheetInput>& sheets, const Buil
         sh.doc->forEach([&](const IEntity& e) { visit(e); });
         BBox table;
         auto spec = readSpecification(*sh.doc, &table);
+        // ProtaStructure jadvali: har pozda adet × boy = jadvaldagi uzunlik, jadval massasi = pozlar yig'indisi
+        {
+            std::map<int, std::pair<double, double>> tabs;   // jadval -> (pozlardan, jadvalda)
+            for (const auto& r : spec) {
+                if (r.table <= 0) continue;
+                const double calc = r.count * r.length;
+                if (r.listedLength > 0 && std::abs(calc - r.listedLength) > std::max(0.6, r.listedLength * 0.003))
+                    issue(true, "rbi.chk.prota_row", {sh.tag, std::to_string(r.table), std::to_string(r.pos), std::to_string(r.count),
+                                                      std::format("{:g}", r.length * 100), std::format("{:.1f}", calc), std::format("{:g}", r.listedLength)});
+                auto& t = tabs[r.table];
+                t.first += r.mass;
+                t.second = r.tableMass;
+            }
+            for (const auto& [n, t] : tabs)
+                if (t.second > 0 && std::abs(t.first - t.second) > std::max(5.0, t.second * 0.01))
+                    issue(true, "rbi.chk.prota_table", {sh.tag, std::to_string(n), std::format("{:.0f}", t.first), std::format("{:.0f}", t.second)});
+            if (!tabs.empty()) {
+                double m = 0;
+                for (const auto& [n, t] : tabs) m += t.first;
+                issue(false, "rbi.chk.prota_ok", {sh.tag, std::to_string(tabs.size()), std::format("{:.0f}", m)});
+                R.issues.back().info = true;
+            }
+        }
         // spetsifikatsiya jadvalidagi matnlar markirovka emas
         std::vector<Lbl> marks;
         for (const auto& l : lbls)
@@ -295,6 +414,13 @@ ImportedRebar importRebar(const std::vector<RebarSheetInput>& sheets, const Buil
             r.mass *= nFloors;
             R.specMass += r.mass;
             R.spec.push_back(r);
+            // ProtaStructure: sterjenlar chizilmagan, jadval — loyiha metraji; Metraj jadvaliga o'tkaziladi
+            if (r.table > 0) {
+                ScheduleRow s{r.pos, sh.element, floors.front(), BarRole::Main, r.d, r.cls, r.length, r.count, r.count * r.length, r.mass};
+                R.schedule.push_back(s);
+                R.massByDia[std::format("\xC3\x98{:.0f} {}", r.d * 1000, r.cls)] += r.mass;
+                R.totalMass += r.mass;
+            }
         }
         auto dist = [](const Vec3& p, const std::vector<Vec3>& pts) {
             double best = 1e18;

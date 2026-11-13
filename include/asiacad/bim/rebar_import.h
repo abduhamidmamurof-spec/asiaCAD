@@ -32,6 +32,10 @@ struct SpecRow {
     int count = 0;
     double massEach = 0, mass = 0;  // kg
     std::string text;
+    // ProtaStructure jadvali (POZ | ÇAP | ADET | BOY): jadval raqami, jadvaldagi umumiy uzunlik (m) va jadval massasi (kg, bir qavat)
+    int table = 0;
+    double listedLength = 0;
+    double tableMass = 0;
 };
 std::vector<SpecRow> readSpecification(const Document& doc, BBox* region = nullptr);  // region — jadval chegarasi
 
