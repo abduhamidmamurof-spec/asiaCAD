@@ -83,7 +83,7 @@ Tartib bilan, har biri alohida modul (ochilishda faqat chizma yadrosi yuklanadi)
 2. ✅ (asosiy qism, v0.34 `GENPLAN`) Genplan / vaziyat rejasi: DXF dan tek buyruq bilan bordyur, trotuar, avtoturargoh chiziqlari, rampalar, shtrixlar,
    metraj (Excel); so'ng "inson nazorati" oynasi — tanlangan bo'lakning turini o'zgartirish, qolgani qayta chiziladi.
 3. 3D model tek buyruq bilan: qavat rejalari + kesimlardan avtomatik ko'tarish; yoqmagan joyni oddiy tahrir (tanlash → o'lcham/tur).
-4. Fasad: rejadan fasad/ko'rinish, fasad elementlari (deraza, vitraj, panel, parapet, karniz), fasad paftasi va metraji.
+4. ✅ (MVP, v0.34 `FACADE`) Fasad: rejadan fasad/ko'rinish, fasad elementlari (deraza, vitraj, panel, parapet, karniz), fasad paftasi va metraji.
 5. Render (fotorealistik) — foydalanuvchi talabi: 3ds Max + Corona va V-Ray, Lumion / D5 / Twinmotion, Unreal (Blender emas).
    "Renderga yuborish" oynasi: sahna eksporti (OBJ+MTL / Collada / glTF) standart material nomlari bilan, kamera, quyosh (Toshkent,
    sana/soat); 3ds Max uchun MaxScript — Corona/V-Ray fizik materiallar, CoronaSun/Sky yoki VRaySun, kamera va 3dsmaxcmd bilan
@@ -95,5 +95,5 @@ Tartib bilan, har biri alohida modul (ochilishda faqat chizma yadrosi yuklanadi)
 5b. Video (alohida mavzu, foydalanuvchi: "render va Lumion — boshqa mavzular"): Lumion sifatidagi animatsiya/video — kamera yo'li,
    o'simlik/odam/avto, yengil (og'ir emas); Lumion/D5/Twinmotion ga eksport yoki o'z yengil real-vaqt ko'rinishi.
 6. Arxitektura: aqlli devor / eshik / deraza, xona maydonlari (brutto/netto, ijaraga beriladigan), kesim va ko'rinish, pafta + PDF.
-7. Statika: o'z 3D FEM yechuvchisi (sterjen + qobiq), modal + spektral (ShNQ 2.01.03-19), oldindan o'lchamlash (ustun/perda/rigel/plita,
+7. (yadro ✅ v0.35 `FEM`: sterjen, statik/modal/spektral CQC, tekshiruv testlari; qobiq, GUI va o'lchamlash — keyin) Statika: o'z 3D FEM yechuvchisi (sterjen + qobiq), modal + spektral (ShNQ 2.01.03-19), oldindan o'lchamlash (ustun/perda/rigel/plita,
    qizil-yashil), temir-beton loyihalash → armatura paftasi, SCAD/ETABS bilan solishtiruvchi tekshiruv misollari (sertifikat uchun).
