@@ -75,3 +75,15 @@ examples/                namuna chizmalar (DXF/acad — sintetik, mijoz fayli em
   armatura `r:i`, KJ plita `kj:<teg>:<daraja>:<tartib>`, KJ boshqa `c:<TUR>:<daraja>:<tartib>`; tarmoqlar `line:i`,
   `node:k`; yo'l / suv yo'li `st:i`; koridor `sec:i`; kanalizatsiya `mh:i`, `seg:i`; shahar `b:<indeks>`, `x:<qo'shimcha>`;
   asosiy 3D `bim:i`.
+
+## Yo'l xaritasi (foydalanuvchi talabi, 13.11.2026)
+
+Tartib bilan, har biri alohida modul (ochilishda faqat chizma yadrosi yuklanadi):
+1. ✅ Akslar — `GRIDAXES` (v0.34).
+2. Genplan / vaziyat rejasi: DXF dan tek buyruq bilan bordyur, trotuar, avtoturargoh chiziqlari, rampalar, shtrixlar,
+   metraj (Excel); so'ng "inson nazorati" oynasi — tanlangan bo'lakning turini o'zgartirish, qolgani qayta chiziladi.
+3. 3D model tek buyruq bilan: qavat rejalari + kesimlardan avtomatik ko'tarish; yoqmagan joyni oddiy tahrir (tanlash → o'lcham/tur).
+4. Fasad: rejadan fasad/ko'rinish, fasad elementlari (deraza, vitraj, panel, parapet, karniz), fasad paftasi va metraji.
+5. Arxitektura: aqlli devor / eshik / deraza, xona maydonlari (brutto/netto, ijaraga beriladigan), kesim va ko'rinish, pafta + PDF.
+6. Statika: o'z 3D FEM yechuvchisi (sterjen + qobiq), modal + spektral (ShNQ 2.01.03-19), oldindan o'lchamlash (ustun/perda/rigel/plita,
+   qizil-yashil), temir-beton loyihalash → armatura paftasi, SCAD/ETABS bilan solishtiruvchi tekshiruv misollari (sertifikat uchun).
