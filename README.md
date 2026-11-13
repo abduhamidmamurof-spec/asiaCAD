@@ -797,6 +797,17 @@ Normaga mos kelmagan elementlar 3D da qizil (xato) yoki sariq (ogohlantirish) bo
 - **GRIDAXES RAD=r0;dr… ANGS=a0;da…** — radial o'qlar (markazdan nurlar + yoylar), burchak yozuvlari va radius o'lchamlari.
 - Menyu: `Chizish → O'qlar` — oraliqlar, burilish, harflar, markalar; jonli ko'rinish. Buyruq nomlari: AKS (tr), OQLAR (uz), ОСИ (ru).
 
+## Genreja — vaziyat rejasidan obodonlashtirish (v0.34)
+
+- **GENPLAN [MAP=qatlam:ZONA,…] [CURB=15;8] [STALL=2.5x5] [NOCURB] [NOPARK] [LAYERS] [XLSX=f]** — chizmadagi yopiq polilin va
+  shtrix konturlari qatlam nomi bo'yicha zonalarga ajratiladi (yo'l, trotuar, yashil, avtoturargoh, bino, maydoncha, rampa, yo'lak;
+  lotin va kirill kalit so'zlar, masalan VP-H-OZELENENIE, ПРОЕЗД, Otopark). Zonalar chegarasida qo'shniga qarab bordyur: yo'l
+  (BR 100.30.15) yoki bog' (BR 100.20.8) — har chegara bir marta, ikki chiziq bilan; avtoturargohlarda 2,5×5 m joylar
+  (to'liq zona ichida, ustma-ust emas). Metraj: bordyur uzunliklari, zonalar maydoni, joylar soni (Excel). Natija `GP_*`
+  qatlamlarida; qayta ishga tushirilsa eskisi almashtiriladi (bitta undo).
+- Menyu `Tarmoqlar → Genreja`: qatlamlar jadvali — har qatlam uchun hudud turi (inson tuzatishi → MAP), bordyur enlari,
+  joy o'lchami, jonli ko'rinish.
+
 ## O'rnatish (Windows)
 
 Logotip, ochilish oynasi, `.exe` ikonkasi. Inno Setup o'rnatuvchisi (`apps/win/asiacad.iss`): Visual C++ runtime avtomatik,

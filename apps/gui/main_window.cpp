@@ -161,7 +161,7 @@ const ActDef kActs[] = {
     {"ewtin", "terrain", "gui.act.ewtin", false},           {"ewprofile", "profile", "gui.act.ewprofile", false},
     {"ewsections", "sections", "gui.act.ewsections", false}, {"ewcarto", "cartogram", "gui.act.ewcarto", false},
     {"ewvolume", "volume", "gui.act.ewvolume", false},
-    {"seismic", "seismic", "gui.act.seismic", false}, {"axes", "grid", "gui.act.axes", false}, {"geotech", "pile", "gui.act.geotech", false},
+    {"seismic", "seismic", "gui.act.seismic", false}, {"axes", "grid", "gui.act.axes", false}, {"genplan", "city", "gui.act.genplan", false}, {"geotech", "pile", "gui.act.geotech", false},
     {"view3d", "view3d", "gui.act.view3d", false},
     {"sheets", "sheet", "gui.act.sheets", false},
     // v0.31: Fayl / Ko'rinish / Tahlil varaqlari
@@ -721,6 +721,13 @@ void MainWindow::buildActions() {
     connect(act_["ewcarto"], &QAction::triggered, this, [this] { openEarthwork(3); });
     connect(act_["ewvolume"], &QAction::triggered, this, [this] { openEarthwork(4); });
     connect(act_["seismic"], &QAction::triggered, this, [this] { openSeismic(0); });
+    connect(act_["genplan"], &QAction::triggered, this, [this] {
+        auto* d = new GenplanDialog(loc_, !theme_.lightCanvas, doc_, this);
+        d->setAttribute(Qt::WA_DeleteOnClose);
+        connect(d, &QDialog::accepted, this, [this, d] { runLine(d->command()); });
+        d->show();
+        d->raise();
+    });
     connect(act_["axes"], &QAction::triggered, this, [this] {
         auto* d = new AxesInputDialog(loc_, !theme_.lightCanvas, this);
         d->setAttribute(Qt::WA_DeleteOnClose);
@@ -925,7 +932,7 @@ void MainWindow::buildRibbon() {
                             {"gui.grp.geo", {"geoplace"}}}},
         {"gui.tab.networks", {{"gui.grp.water", {"sewer", "pipedraw", "waterway"}},
                               {"gui.grp.underground", {"util"}},
-                              {"gui.grp.roads", {"road", "corridor"}}}},
+                              {"gui.grp.roads", {"road", "corridor", "genplan"}}}},
         {"gui.tab.struct", {{"gui.grp.steelkm", {"steelframe", "steel"}},
                             {"gui.grp.elements", {"stairtpl", "ramptpl", "rwalltpl"}},
                             {"gui.grp.concrete", {"building", "rebar"}},

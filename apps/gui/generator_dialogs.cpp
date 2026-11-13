@@ -431,6 +431,146 @@ void AxesInputDialog::update_() {
     }
 }
 
+// ---------------------------------------------------------------- GENPLAN
+GenplanDialog::GenplanDialog(const i18n::Localizer& loc, bool dark, const Document& doc, QWidget* parent) : GenBase(loc, dark, parent), doc_(doc) {
+    setWindowTitle(t("gui.gp.title"));
+    resize(1080, 640);
+    auto* root = new QHBoxLayout(this);
+    auto* left = new QWidget(this);
+    left->setMinimumWidth(470);
+    auto* lv = new QVBoxLayout(left);
+    auto* hint = new QLabel(t("gui.gp.hint"), left);
+    hint->setWordWrap(true);
+    lv->addWidget(hint);
+    table_ = new QTableWidget(0, 3, left);
+    table_->setHorizontalHeaderLabels({t("gui.gp.layer"), t("gui.gp.count"), t("gui.gp.zone")});
+    table_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    table_->verticalHeader()->hide();
+    lv->addWidget(table_, 1);
+    std::map<std::string, std::pair<civil::GpZone, int>> layers;
+    civil::GenplanSpec sp0;
+    civil::gpExtractZones(doc_, sp0, &layers);
+    table_->setRowCount(static_cast<int>(layers.size()));
+    int row = 0;
+    for (const auto& [layer, zc] : layers) {
+        auto_[layer] = zc.first;
+        auto* it = new QTableWidgetItem(QString::fromStdString(layer));
+        it->setFlags(it->flags() & ~Qt::ItemIsEditable);
+        table_->setItem(row, 0, it);
+        auto* c = new QTableWidgetItem(QString::number(zc.second));
+        c->setFlags(c->flags() & ~Qt::ItemIsEditable);
+        table_->setItem(row, 1, c);
+        auto* cb = new QComboBox(table_);
+        for (int z = 0; z <= 8; ++z) cb->addItem(t((std::string("gp.zone.") + civil::gpZoneKey(static_cast<civil::GpZone>(z))).c_str()), z);
+        cb->setCurrentIndex(static_cast<int>(zc.first));
+        connect(cb, &QComboBox::currentIndexChanged, this, [this] { refresh_(); });
+        table_->setCellWidget(row, 2, cb);
+        ++row;
+    }
+    table_->resizeColumnToContents(2);
+    auto dspin = [&](double lo, double hi, double step, int dec, double v, const QString& suf) {
+        auto* sb = new QDoubleSpinBox(left);
+        sb->setRange(lo, hi);
+        sb->setSingleStep(step);
+        sb->setDecimals(dec);
+        sb->setValue(v);
+        sb->setSuffix(suf);
+        return sb;
+    };
+    auto* form = new QFormLayout;
+    curbs_ = new QCheckBox(t("gui.gp.curbs"), left);
+    curbs_->setChecked(true);
+    park_ = new QCheckBox(t("gui.gp.parking"), left);
+    park_->setChecked(true);
+    roadW_ = dspin(5, 40, 1, 0, 15, " cm");
+    gardenW_ = dspin(4, 20, 1, 0, 8, " cm");
+    stallW_ = dspin(2.0, 4.0, 0.1, 2, 2.5, " m");
+    stallL_ = dspin(4.0, 7.0, 0.1, 2, 5.0, " m");
+    form->addRow(curbs_);
+    form->addRow(t("gui.gp.road_w"), roadW_);
+    form->addRow(t("gui.gp.garden_w"), gardenW_);
+    form->addRow(park_);
+    auto* st = new QHBoxLayout;
+    st->addWidget(stallW_);
+    st->addWidget(new QLabel(QString::fromUtf8("×"), left));
+    st->addWidget(stallL_);
+    form->addRow(t("gui.gp.stall"), st);
+    lv->addLayout(form);
+    info_ = new QLabel(left);
+    info_->setWordWrap(true);
+    lv->addWidget(info_);
+    auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, left);
+    bb->button(QDialogButtonBox::Ok)->setText(t("gui.gen.draw"));
+    bb->button(QDialogButtonBox::Cancel)->setText(t("gui.gen.cancel"));
+    lv->addWidget(bb);
+    root->addWidget(left);
+    prev_ = new PlanPreview(this);
+    prev_->setDark(dark);
+    root->addWidget(prev_, 1);
+    connect(bb, &QDialogButtonBox::accepted, this, &QDialog::accept);
+    connect(bb, &QDialogButtonBox::rejected, this, &QDialog::reject);
+    for (auto* sb : {roadW_, gardenW_, stallW_, stallL_}) connect(sb, &QDoubleSpinBox::valueChanged, this, [this] { refresh_(); });
+    for (auto* c : {curbs_, park_}) connect(c, &QCheckBox::toggled, this, [this] { refresh_(); });
+    refresh_();
+}
+
+int GenplanDialog::layerCount() const { return table_->rowCount(); }
+
+void GenplanDialog::setZone(const QString& layer, civil::GpZone z) {
+    for (int r = 0; r < table_->rowCount(); ++r)
+        if (table_->item(r, 0)->text() == layer)
+            if (auto* cb = qobject_cast<QComboBox*>(table_->cellWidget(r, 2))) cb->setCurrentIndex(static_cast<int>(z));
+}
+
+QString GenplanDialog::command() const {
+    QStringList map;
+    for (int r = 0; r < table_->rowCount(); ++r) {
+        const std::string layer = table_->item(r, 0)->text().toStdString();
+        const auto* cb = qobject_cast<QComboBox*>(table_->cellWidget(r, 2));
+        const auto z = static_cast<civil::GpZone>(cb ? cb->currentData().toInt() : 0);
+        if (auto it = auto_.find(layer); it == auto_.end() || it->second != z) map << QString::fromStdString(layer) + ":" + civil::gpZoneKey(z);
+    }
+    QString c = "GENPLAN";
+    if (!map.isEmpty()) c += " \"MAP=" + map.join(',') + "\"";
+    c += QString(" CURB=%1;%2 STALL=%3x%4").arg(roadW_->value()).arg(gardenW_->value()).arg(stallW_->value()).arg(stallL_->value());
+    if (!curbs_->isChecked()) c += " NOCURB";
+    if (!park_->isChecked()) c += " NOPARK";
+    return c;
+}
+
+civil::GenplanResult GenplanDialog::preview() const {
+    civil::GenplanSpec sp;
+    for (int r = 0; r < table_->rowCount(); ++r)
+        if (const auto* cb = qobject_cast<QComboBox*>(table_->cellWidget(r, 2)))
+            sp.overrides[table_->item(r, 0)->text().toStdString()] = static_cast<civil::GpZone>(cb->currentData().toInt());
+    sp.roadCurb.width = roadW_->value() / 100;
+    sp.gardenCurb.width = gardenW_->value() / 100;
+    sp.stallW = stallW_->value();
+    sp.stallL = stallL_->value();
+    sp.curbs = curbs_->isChecked();
+    sp.parking = park_->isChecked();
+    return civil::generateGenplan(doc_, sp);
+}
+
+QString GenplanDialog::summary() const { return info_->text(); }
+
+void GenplanDialog::refresh_() {
+    auto r = preview();
+    info_->setText(t("gp.msg.done", {QString::number(r.zones.size()), QString::number(r.roadCurbLen, 'f', 1), QString::number(r.gardenCurbLen, 'f', 1),
+                                     QString::number(r.stalls)}));
+    // ko'rinish: zonalar konturi + yangi bordyur/joylar
+    civil::Entities es;
+    for (const auto& z : r.zones) {
+        std::vector<Vec3> pts;
+        for (const auto& q : z.outer) pts.push_back({q.x, q.y, 0});
+        auto p = std::make_unique<PolylineEntity>(pts, true);
+        p->setLayer(std::string("GPZ_") + civil::gpZoneKey(z.zone));
+        es.push_back(std::move(p));
+    }
+    for (auto& e : r.entities) es.push_back(std::move(e));
+    prev_->setEntities(std::move(es));
+}
+
 // ---------------------------------------------------------------- ALIGN
 AlignInputDialog::AlignInputDialog(const i18n::Localizer& loc, bool dark, bool canal, QWidget* parent)
     : GenBase(loc, dark, parent), canal_(canal) {

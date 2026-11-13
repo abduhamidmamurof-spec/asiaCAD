@@ -74,13 +74,14 @@ add_library(asiacad_civil
   src/civil/drawset.cpp
   src/civil/generators.cpp
   src/civil/axes.cpp
+  src/civil/genplan.cpp
   src/civil/drive.cpp
   src/civil/symbols.cpp
   src/civil/survey.cpp
   src/civil/terrain.cpp
 )
 target_include_directories(asiacad_civil PUBLIC include)
-target_link_libraries(asiacad_civil PUBLIC asiacad_core asiacad_io)
+target_link_libraries(asiacad_civil PUBLIC asiacad_core asiacad_io asiacad_i18n)
 
 # Buyruq interpretatori: CLI va GUI uchun umumiy
 add_library(asiacad_cmd apps/cli/interpreter.cpp apps/cli/interpreter_draft.cpp apps/cli/interpreter_survey.cpp apps/cli/interpreter_terrain.cpp apps/cli/interpreter_sheet.cpp apps/cli/interpreter_links.cpp apps/cli/interpreter_pipes.cpp apps/cli/interpreter_asbuilt.cpp apps/cli/interpreter_seismic.cpp)

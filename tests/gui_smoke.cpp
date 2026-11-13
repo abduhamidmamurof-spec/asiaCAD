@@ -1943,6 +1943,28 @@ int main(int argc, char** argv) {
         CHECK(tw.closeTabAt(tabs->currentIndex()) && tw.drawingCount() == nd - 1 && tw.activeDrawing() != e);
         CHECK(!tw.ribbon()->isHidden() || !tw.isStart());
     }
+    {   // genplan dialogi: tasnif jadvali, inson tuzatishi → MAP, ko'rinish
+        std::printf("genplan dialog\n");
+        asiacad::Document gd;
+        auto box = [&](double x0, double y0, double x1, double y1, const char* layer) {
+            auto p = std::make_unique<asiacad::PolylineEntity>(std::vector<asiacad::Vec3>{{x0, y0, 0}, {x1, y0, 0}, {x1, y1, 0}, {x0, y1, 0}}, true);
+            p->setLayer(layer);
+            gd.add(std::move(p));
+        };
+        box(0, 0, 40, 20, "Proezd");
+        box(0, 20, 40, 26, "Trotuar");
+        box(0, 26, 40, 36, "Gazon");
+        box(40, 0, 60, 12.2, "Parkovka");
+        asiacad::gui::GenplanDialog gp(loc, true, gd);
+        CHECK(gp.layerCount() == 4);
+        auto pr = gp.preview();
+        CHECK(pr.stalls == 16 && pr.gardenCurbLen > 39);
+        CHECK(!gp.command().contains("MAP="));
+        gp.setZone("Gazon", asiacad::civil::GpZone::Sidewalk);
+        CHECK(gp.command().contains("MAP=Gazon:SIDEWALK"));
+        CHECK(gp.preview().gardenCurbLen < 1e-9);
+        if (const char* shot = std::getenv("ASIACAD_SHAKE_SHOT")) { gp.setZone("Gazon", asiacad::civil::GpZone::Green); gp.show(); QApplication::processEvents(); gp.grab().save(QString(shot) + "_gp.png"); }
+    }
     {   // akslar dialogi: jonli ko'rinish, buyruq, radial
         std::printf("axes dialog\n");
         asiacad::gui::AxesInputDialog ad(loc, true);

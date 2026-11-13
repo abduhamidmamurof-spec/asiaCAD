@@ -4,6 +4,7 @@
 #include <asiacad/bim/rebar_import.h>
 #include <asiacad/bim/seismic.h>
 #include <asiacad/civil/axes.h>
+#include <asiacad/civil/genplan.h>
 #include <asiacad/bim/geotech.h>
 #include <asiacad/bim/kj_project.h>
 #include <asiacad/bim/steel.h>
@@ -360,7 +361,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT" || c == "LAYON" || c == "LAYUNISO" || c == "DEVCLEAR");
     }
-    CHECK(loc.canonicalCommands().size() == 117);
+    CHECK(loc.canonicalCommands().size() == 118);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -4882,6 +4883,41 @@ TEST(seismic_section_modal_spectrum) {
     NEAR(nu, (1e6 - 2 * 2.5e5) / (2 * (1e6 - 2.5e5)));
     NEAR(sz::dynamicModulus(2.0, 500, nu), 2 * 2.0 * 2.5e5 * (1 + nu));
 }
+TEST(genplan_zones_curbs_parking) {
+    using namespace civil;
+    CHECK(gpClassifyLayer("VP-H-OZELENENIE", gpDefaultRules()) == GpZone::Green);
+    CHECK(gpClassifyLayer("VP-H-DOROZHKA_KOLYASKI", gpDefaultRules()) == GpZone::Path);   // yo'lak, yo'l emas
+    CHECK(gpClassifyLayer("ПРОЕЗД", gpDefaultRules()) == GpZone::Road);
+    CHECK(gpClassifyLayer("Otopark", gpDefaultRules()) == GpZone::Parking);
+    // sintetik genplan: 40×20 yo'l, uning ustida 40×6 trotuar, ustida 40×10 gazon; yonida 20×12 avtoturargoh
+    Document doc;
+    auto box = [&](double x0, double y0, double x1, double y1, const char* layer) {
+        auto p = std::make_unique<PolylineEntity>(std::vector<Vec3>{{x0, y0, 0}, {x1, y0, 0}, {x1, y1, 0}, {x0, y1, 0}}, true);
+        p->setLayer(layer);
+        doc.add(std::move(p));
+    };
+    box(0, 0, 40, 20, "ROAD_asfalt");
+    box(0, 20, 40, 26, "Trotuar");
+    box(0, 26, 40, 36, "Gazon");
+    box(40, 0, 60, 12.2, "Parkovka");
+    GenplanSpec sp;
+    auto r = generateGenplan(doc, sp);
+    CHECK(r.zones.size() == 4);
+    CHECK(std::abs(r.area[GpZone::Road] - 800) < 1e-6);
+    // yo'l bordyuri: yo'l–trotuar chegarasi (40 m); bog' bordyuri: trotuar–gazon (40 m)
+    CHECK(std::abs(r.roadCurbLen - 40) < 0.5);
+    CHECK(std::abs(r.gardenCurbLen - 40) < 0.5);
+    // avtoturargoh 20×12.2: uzun qirralar bo'ylab 2×8 joy (2,5×5)
+    CHECK(r.stalls == 16);
+    // inson tuzatishi: gazon qatlamini trotuar deb belgilash → bog' bordyuri yo'qoladi
+    sp.overrides = gpParseMap("Gazon:SIDEWALK");
+    r = generateGenplan(doc, sp);
+    CHECK(r.gardenCurbLen < 1e-9);
+    CHECK_THROWS(gpParseMap("Gazon:XYZ"));
+    const auto out = runScript("tr", {"LINE 0,0 1,1"});
+    (void)out;
+}
+
 TEST(axes_grid_rect_rotated_radial) {
     using namespace civil;
     CHECK(axisLetter(0, true) == "A" && axisLetter(8, true) == "J" && axisLetter(24, true) == "A1");   // I va O yo'q

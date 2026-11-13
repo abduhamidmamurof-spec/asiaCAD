@@ -11,6 +11,7 @@
 #include "template_sidebar.h"
 
 #include <asiacad/civil/generators.h>
+#include <asiacad/civil/genplan.h>
 #include <asiacad/i18n/localizer.h>
 
 #include <QDialog>
@@ -97,6 +98,28 @@ private:
     QCheckBox *swap_ = nullptr, *dims_ = nullptr, *both_ = nullptr;
     QLabel *lx_ = nullptr, *ly_ = nullptr, *info_ = nullptr;
     PlanPreview* prev_ = nullptr;
+};
+
+// Genplan: qatlamlar tasnifi (inson tuzatadi) → bordyurlar, avtoturargoh joylari, metraj; oldindan ko'rish
+class GenplanDialog : public GenBase {
+    Q_OBJECT
+public:
+    GenplanDialog(const i18n::Localizer& loc, bool dark, const Document& doc, QWidget* parent = nullptr);
+    QString command() const;           // "GENPLAN MAP=… CURB=… STALL=…"
+    void setZone(const QString& layer, civil::GpZone z);
+    int layerCount() const;
+    civil::GenplanResult preview() const;   // joriy sozlamalar bilan (chizmaga yozmaydi)
+    QString summary() const;
+
+private:
+    void refresh_();
+    const Document& doc_;
+    QTableWidget* table_ = nullptr;
+    QDoubleSpinBox *roadW_ = nullptr, *gardenW_ = nullptr, *stallW_ = nullptr, *stallL_ = nullptr;
+    QCheckBox *curbs_ = nullptr, *park_ = nullptr;
+    QLabel* info_ = nullptr;
+    PlanPreview* prev_ = nullptr;
+    std::map<std::string, civil::GpZone> auto_;   // avtomatik tasnif (MAP ga faqat farqlar yoziladi)
 };
 
 class AlignInputDialog : public GenBase {

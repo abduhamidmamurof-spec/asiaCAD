@@ -8,6 +8,8 @@
 
 #include <asiacad/bim/geotech.h>
 #include <asiacad/civil/axes.h>
+#include <asiacad/civil/genplan.h>
+#include <asiacad/core/commands.h>
 #include <asiacad/bim/seismic.h>
 #include <asiacad/core/error.h>
 #include <asiacad/i18n/utf8.h>
@@ -17,6 +19,8 @@
 #include <format>
 #include <fstream>
 #include <map>
+#include <set>
+#include <algorithm>
 #include <sstream>
 
 namespace asiacad::cli {
@@ -57,6 +61,70 @@ bool Interpreter::dispatchSeismic(const std::string& cmd, const Args& a) {
         for (double d : sp.radial ? sp.da : sp.dx) W += d;
         for (double d : sp.radial ? sp.dr : sp.dy) D += d;
         say(sp.radial ? "axes.msg.radial" : "axes.msg.done", {std::to_string(lines), std::format("{:g}", W), std::format("{:g}", D)});
+        return true;
+    }
+    if (cmd == "GENPLAN") {   // vaziyat rejasidan: bordyurlar, avtoturargoh joylari, metraj
+        std::vector<std::string> flags;
+        const auto m = kv(a, 0, &flags);
+        civil::GenplanSpec sp;
+        auto has = [&](const char* f) { return std::find(flags.begin(), flags.end(), f) != flags.end(); };
+        for (const auto& f : flags)
+            if (f != "NOCURB" && f != "NOPARK" && f != "LAYERS") throw usage();
+        sp.curbs = !has("NOCURB");
+        sp.parking = !has("NOPARK");
+        if (auto it = m.find("MAP"); it != m.end()) {
+            try { sp.overrides = civil::gpParseMap(it->second); } catch (const std::invalid_argument& e) { throw Error("gp.err.map", {e.what()}); }
+        }
+        if (auto it = m.find("STALL"); it != m.end()) {
+            const auto x = utf8::toUpper(it->second).find('X');
+            if (x == std::string::npos) throw usage();
+            sp.stallW = parseNumber(it->second.substr(0, x));
+            sp.stallL = parseNumber(it->second.substr(x + 1));
+        }
+        if (auto it = m.find("CURB"); it != m.end()) {
+            const auto c = it->second.find(';');
+            sp.roadCurb.width = parseNumber(c == std::string::npos ? it->second : it->second.substr(0, c)) / 100;
+            if (c != std::string::npos) sp.gardenCurb.width = parseNumber(it->second.substr(c + 1)) / 100;
+        }
+        auto r = civil::generateGenplan(doc_, sp);
+        // qatlamlar ro'yxati (tasnif) — inson tekshiradi
+        for (const auto& [layer, zc] : r.layers)
+            out_ << "  " << layer << " → " << loc_.tr(std::string("gp.zone.") + civil::gpZoneKey(zc.first)) << " (" << zc.second << ")\n";
+        if (has("LAYERS")) return true;
+        if (r.zones.empty()) throw Error("gp.err.nozones", {});
+        // oldingi GP_* natijasi almashtiriladi
+        std::vector<EntityId> old;
+        for (EntityId id : doc_.ids())
+            if (const IEntity* e = doc_.find(id); e && e->layer().rfind("GP_", 0) == 0) old.push_back(id);
+        auto comp = std::make_unique<CompositeCommand>(cmd);
+        if (!old.empty()) comp->add(std::make_unique<DeleteCommand>(old));
+        std::set<std::string> made;
+        for (const auto& e : r.entities)
+            if (!doc_.layer(e->layer()) && made.insert(e->layer()).second) comp->add(std::make_unique<SetLayerCommand>(Layer{e->layer()}));
+        std::vector<AddEntityCommand*> adds;
+        for (auto& e : r.entities) {
+            auto c = std::make_unique<AddEntityCommand>(std::move(e), cmd);
+            adds.push_back(c.get());
+            comp->add(std::move(c));
+        }
+        stack_.execute(std::move(comp));
+        last_.clear();
+        for (auto* c : adds) last_.push_back(c->entityId());
+        say("gp.msg.done", {std::to_string(r.zones.size()), std::format("{:.1f}", r.roadCurbLen), std::format("{:.1f}", r.gardenCurbLen),
+                            std::to_string(r.stalls)});
+        for (const auto& [z, ar] : r.area) out_ << "  " << loc_.tr(std::string("gp.zone.") + civil::gpZoneKey(z)) << ": " << std::format("{:.1f}", ar) << " m²\n";
+        if (auto it = m.find("XLSX"); it != m.end()) {
+            xlsx::Workbook wb;
+            auto& sh = wb.add(loc_.tr("gp.xl.sheet"));
+            sh.add({xlsx::Cell::s(loc_.tr("gp.xl.item"), 1), xlsx::Cell::s(loc_.tr("gp.xl.unit"), 1), xlsx::Cell::s(loc_.tr("gp.xl.qty"), 1)});
+            sh.add({xlsx::Cell::s(loc_.tr("gp.xl.road_curb", {sp.roadCurb.name})), xlsx::Cell::s("m"), xlsx::Cell::n(r.roadCurbLen)});
+            sh.add({xlsx::Cell::s(loc_.tr("gp.xl.garden_curb", {sp.gardenCurb.name})), xlsx::Cell::s("m"), xlsx::Cell::n(r.gardenCurbLen)});
+            sh.add({xlsx::Cell::s(loc_.tr("gp.xl.stalls")), xlsx::Cell::s(loc_.tr("gp.xl.pcs")), xlsx::Cell::n(r.stalls, 5)});
+            for (const auto& [z, ar] : r.area) sh.add({xlsx::Cell::s(loc_.tr(std::string("gp.zone.") + civil::gpZoneKey(z))), xlsx::Cell::s("m²"), xlsx::Cell::n(ar)});
+            sh.widths = {44, 8, 14};
+            xlsx::save(wb, it->second);
+            say("dev.msg.saved", {it->second});
+        }
         return true;
     }
     if (cmd == "SEISMIC") {

@@ -84,6 +84,10 @@ Tartib bilan, har biri alohida modul (ochilishda faqat chizma yadrosi yuklanadi)
    metraj (Excel); so'ng "inson nazorati" oynasi — tanlangan bo'lakning turini o'zgartirish, qolgani qayta chiziladi.
 3. 3D model tek buyruq bilan: qavat rejalari + kesimlardan avtomatik ko'tarish; yoqmagan joyni oddiy tahrir (tanlash → o'lcham/tur).
 4. Fasad: rejadan fasad/ko'rinish, fasad elementlari (deraza, vitraj, panel, parapet, karniz), fasad paftasi va metraji.
-5. Arxitektura: aqlli devor / eshik / deraza, xona maydonlari (brutto/netto, ijaraga beriladigan), kesim va ko'rinish, pafta + PDF.
-6. Statika: o'z 3D FEM yechuvchisi (sterjen + qobiq), modal + spektral (ShNQ 2.01.03-19), oldindan o'lchamlash (ustun/perda/rigel/plita,
+5. Render (fotorealistik) — foydalanuvchi talabi: 3ds Max + Corona va V-Ray, Lumion / D5 / Twinmotion, Unreal (Blender emas).
+   "Renderga yuborish" oynasi: sahna eksporti (OBJ+MTL / Collada / glTF) standart material nomlari bilan, kamera, quyosh (Toshkent,
+   sana/soat); 3ds Max uchun MaxScript — Corona/V-Ray fizik materiallar, CoronaSun/Sky yoki VRaySun, kamera va 3dsmaxcmd bilan
+   avtomatik render; daraxt/odam/avto joylari genplandan.
+6. Arxitektura: aqlli devor / eshik / deraza, xona maydonlari (brutto/netto, ijaraga beriladigan), kesim va ko'rinish, pafta + PDF.
+7. Statika: o'z 3D FEM yechuvchisi (sterjen + qobiq), modal + spektral (ShNQ 2.01.03-19), oldindan o'lchamlash (ustun/perda/rigel/plita,
    qizil-yashil), temir-beton loyihalash → armatura paftasi, SCAD/ETABS bilan solishtiruvchi tekshiruv misollari (sertifikat uchun).
