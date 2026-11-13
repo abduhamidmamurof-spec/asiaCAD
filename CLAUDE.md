@@ -88,6 +88,10 @@ Tartib bilan, har biri alohida modul (ochilishda faqat chizma yadrosi yuklanadi)
    "Renderga yuborish" oynasi: sahna eksporti (OBJ+MTL / Collada / glTF) standart material nomlari bilan, kamera, quyosh (Toshkent,
    sana/soat); 3ds Max uchun MaxScript — Corona/V-Ray fizik materiallar, CoronaSun/Sky yoki VRaySun, kamera va 3dsmaxcmd bilan
    avtomatik render; daraxt/odam/avto joylari genplandan.
+   Realizm talabi (foydalanuvchi: Blenderda daraxt/odamlar real emas edi): AsiaCAD daraxt/odam/avtoni o'zi modellamaydi — joy, tur,
+   balandlik, burilish bilan "marker" eksport qiladi; MaxScript ularni Chaos Cosmos (Corona/V-Ray) skanerlangan aktivlari yoki
+   foydalanuvchi kutubxonasidagi proxy (.cgeo/.vrmesh, Maxtree/Laubwerk/AXYZ) bilan almashtiradi; Lumion/D5 — o'z kutubxonasi.
+   Tur moslash jadvali (masalan "chinor 12 m" → aktiv nomi) foydalanuvchi bilan sozlanadi.
 5b. Video (alohida mavzu, foydalanuvchi: "render va Lumion — boshqa mavzular"): Lumion sifatidagi animatsiya/video — kamera yo'li,
    o'simlik/odam/avto, yengil (og'ir emas); Lumion/D5/Twinmotion ga eksport yoki o'z yengil real-vaqt ko'rinishi.
 6. Arxitektura: aqlli devor / eshik / deraza, xona maydonlari (brutto/netto, ijaraga beriladigan), kesim va ko'rinish, pafta + PDF.
