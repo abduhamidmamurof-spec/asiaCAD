@@ -161,7 +161,7 @@ const ActDef kActs[] = {
     {"ewtin", "terrain", "gui.act.ewtin", false},           {"ewprofile", "profile", "gui.act.ewprofile", false},
     {"ewsections", "sections", "gui.act.ewsections", false}, {"ewcarto", "cartogram", "gui.act.ewcarto", false},
     {"ewvolume", "volume", "gui.act.ewvolume", false},
-    {"seismic", "seismic", "gui.act.seismic", false}, {"axes", "grid", "gui.act.axes", false}, {"genplan", "city", "gui.act.genplan", false}, {"export3d", "ptexport", "gui.act.export3d", false}, {"facade", "building", "gui.act.facade", false}, {"geotech", "pile", "gui.act.geotech", false},
+    {"seismic", "seismic", "gui.act.seismic", false}, {"axes", "grid", "gui.act.axes", false}, {"genplan", "city", "gui.act.genplan", false}, {"export3d", "ptexport", "gui.act.export3d", false}, {"facade", "bim", "gui.act.facade", false}, {"geotech", "pile", "gui.act.geotech", false},
     {"view3d", "view3d", "gui.act.view3d", false},
     {"sheets", "sheet", "gui.act.sheets", false},
     // v0.31: Fayl / Ko'rinish / Tahlil varaqlari
