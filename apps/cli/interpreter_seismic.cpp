@@ -12,6 +12,7 @@
 #include <asiacad/bim/scene_export.h>
 #include <asiacad/bim/building.h>
 #include <asiacad/bim/facade.h>
+#include <asiacad/bim/fem.h>
 #include <filesystem>
 #include <asiacad/core/commands.h>
 #include <asiacad/bim/seismic.h>
@@ -348,6 +349,139 @@ bool Interpreter::dispatchSeismic(const std::string& cmd, const Args& a) {
             sh.widths = {44, 8, 14};
             xlsx::save(wb, it->second);
             say("dev.msg.saved", {it->second});
+        }
+        return true;
+    }
+    if (cmd == "FEM") {   // 3D sterjenli FEM: statik, xos tebranishlar, spektral (Lot-16 spektri), DRAW — chizmaga
+        std::vector<std::string> flags;
+        const auto m = kv(a, 0, &flags);
+        bool draw = false;
+        std::string file;
+        for (const auto& f : flags) {
+            if (f == "DRAW") draw = true;
+            else if (file.empty()) file = f;
+            else throw usage();
+        }
+        bim::fem::Model md;
+        if (auto it = m.find("GEN"); it != m.end()) {   // GEN=6x3;6x2 — X va Y oraliqlari
+            auto spans = [&](const std::string& s) {
+                std::vector<double> v;
+                const auto u = utf8::toUpper(s);
+                const auto x = u.find('X');
+                if (x == std::string::npos) v.push_back(parseNumber(s));
+                else for (int i = 0, n = static_cast<int>(parseNumber(s.substr(x + 1))); i < n; ++i) v.push_back(parseNumber(s.substr(0, x)));
+                return v;
+            };
+            const auto sc = it->second.find(';');
+            const auto dx = spans(it->second.substr(0, sc));
+            const auto dy = sc == std::string::npos ? dx : spans(it->second.substr(sc + 1));
+            auto pair = [&](const char* k, double d1, double d2) {
+                std::pair<double, double> p{d1, d2};
+                if (auto j = m.find(k); j != m.end()) {
+                    const auto x = utf8::toUpper(j->second).find('X');
+                    if (x == std::string::npos) throw usage();
+                    p = {parseNumber(j->second.substr(0, x)), parseNumber(j->second.substr(x + 1))};
+                }
+                return p;
+            };
+            const auto [cb, ch] = pair("COL", 0.4, 0.4);
+            const auto [bb, bh] = pair("BEAM", 0.3, 0.6);
+            const int fl = static_cast<int>(num(m, "FLOORS", 5));
+            if (dx.empty() || dy.empty() || fl < 1) throw usage();
+            md = bim::fem::frameGenerator(dx, dy, fl, num(m, "H", 3.3), cb, ch, bb, bh, num(m, "E", 3.0e7), num(m, "Q", 1.0), num(m, "G", 10.0));
+        } else {
+            if (file.empty()) throw usage();
+            std::ifstream f(file, std::ios::binary);
+            if (!f) throw Error("acad.err.open", {file});
+            std::stringstream ss;
+            ss << f.rdbuf();
+            try { md = bim::fem::parseModel(ss.str()); } catch (const std::exception& e) { throw Error("fem.err.parse", {e.what()}); }
+        }
+        if (auto it = m.find("SAVE"); it != m.end()) {
+            std::ofstream o(it->second, std::ios::binary);
+            if (!o) throw Error("err.write_failed", {it->second});
+            o << bim::fem::writeModel(md);
+            say("dev.msg.saved", {it->second});
+        }
+        double totMass = 0;
+        for (const auto& [n, v] : md.mass) totMass += v;
+        say("fem.msg.model", {std::to_string(md.nodes.size()), std::to_string(md.beams.size()), std::format("{:.1f}", totMass)});
+        xlsx::Workbook wb;
+        xlsx::Sheet* sh = nullptr;
+        if (m.count("XLSX")) {
+            sh = &wb.add(loc_.tr("fem.xl.sheet"));
+            sh->widths = {28, 14, 14, 14, 14};
+        }
+        try {
+            if (!md.loads.empty()) {
+                const auto r = bim::fem::solveStatic(md);
+                double rz = 0;
+                for (const auto& [n, R] : r.reactions) rz += R[2];
+                double maxM = 0;
+                for (const auto& bf : r.forces) for (int k : {4, 5, 10, 11}) maxM = std::max(maxM, std::abs(bf.f[static_cast<std::size_t>(k)]));
+                say("fem.msg.static", {std::format("{:.2f}", r.maxDisp * 1000), std::format("{:.0f}", rz), std::format("{:.0f}", maxM)});
+                if (sh) {
+                    sh->add({xlsx::Cell::s(loc_.tr("fem.xl.static"), 1)});
+                    sh->add({xlsx::Cell::s(loc_.tr("fem.xl.maxdisp")), xlsx::Cell::n(r.maxDisp * 1000, 2)});
+                    sh->add({xlsx::Cell::s(loc_.tr("fem.xl.rz")), xlsx::Cell::n(rz, 1)});
+                    sh->add({xlsx::Cell::s(loc_.tr("fem.xl.maxm")), xlsx::Cell::n(maxM, 1)});
+                }
+            }
+            const int nm = static_cast<int>(num(m, "MODES", 6));
+            if (totMass > 0 && nm > 0) {
+                const auto modes = bim::fem::solveModes(md, nm);
+                if (sh) sh->add({xlsx::Cell::s(loc_.tr("fem.xl.mode"), 1), xlsx::Cell::s("T, s", 1), xlsx::Cell::s("Mx, %", 1), xlsx::Cell::s("My, %", 1), xlsx::Cell::s("Mz, %", 1)});
+                double sx = 0, sy = 0;
+                for (std::size_t k = 0; k < modes.size(); ++k) {
+                    const auto& q = modes[k];
+                    sx += q.meffRatio[0];
+                    sy += q.meffRatio[1];
+                    say("fem.msg.mode", {std::to_string(k + 1), std::format("{:.3f}", q.T), std::format("{:.1f}", q.meffRatio[0] * 100), std::format("{:.1f}", q.meffRatio[1] * 100),
+                                         std::format("{:.1f}", q.meffRatio[2] * 100)});
+                    if (sh) sh->add({xlsx::Cell::n(static_cast<double>(k + 1), 0), xlsx::Cell::n(q.T, 3), xlsx::Cell::n(q.meffRatio[0] * 100, 1), xlsx::Cell::n(q.meffRatio[1] * 100, 1),
+                                     xlsx::Cell::n(q.meffRatio[2] * 100, 1)});
+                }
+                // QMQ 2.01.03-19: samarali massa yig'indisi ≥ 90%
+                say(std::min(sx, sy) >= 0.9 ? "fem.msg.mass_ok" : "fem.msg.mass_low", {std::format("{:.0f}", sx * 100), std::format("{:.0f}", sy * 100)});
+                const int rp = static_cast<int>(num(m, "RP", 475));
+                const double R = num(m, "R", 1.0);
+                const auto spec = bim::seismic::siteSpectrumLot16(rp);
+                const double scale = m.count("PGA") ? parseNumber(m.at("PGA")) / std::max(1e-9, spec.sa(0)) : 1.0;
+                std::string dirs = m.count("DIR") ? utf8::toUpper(m.at("DIR")) : "XY";
+                for (char d : dirs) {
+                    const int di = d == 'Y' ? 1 : 0;
+                    const auto sp = bim::fem::responseSpectrum(md, modes, [&](double T) { return spec.sa(T) * 9.81 * scale / R; }, di);
+                    say("fem.msg.spectrum", {std::string(1, d), std::to_string(rp), std::format("{:.0f}", sp.baseShear), std::format("{:.1f}", sp.roof * 1000),
+                                             std::format("{:.1f}", totMass > 0 ? sp.baseShear / (totMass * 9.81) * 100 : 0.0)});
+                    if (sh) sh->add({xlsx::Cell::s(loc_.tr("fem.xl.shear") + " " + std::string(1, d)), xlsx::Cell::n(sp.baseShear, 0), xlsx::Cell::s(loc_.tr("fem.xl.roof")),
+                                     xlsx::Cell::n(sp.roof * 1000, 1)});
+                }
+            }
+        } catch (const std::runtime_error& e) {
+            throw Error("fem.err.solve", {e.what()});
+        }
+        if (sh) { xlsx::save(wb, m.at("XLSX")); say("dev.msg.saved", {m.at("XLSX")}); }
+        if (draw) {   // sterjenlar chizmaga: FEM_USTUN (vertikal) va FEM_RIGEL
+            std::vector<EntityId> old;
+            for (EntityId id : doc_.ids())
+                if (const IEntity* e = doc_.find(id); e && e->layer().rfind("FEM_", 0) == 0) old.push_back(id);
+            auto comp = std::make_unique<CompositeCommand>(cmd);
+            if (!old.empty()) comp->add(std::make_unique<DeleteCommand>(old));
+            for (const char* L : {"FEM_USTUN", "FEM_RIGEL"})
+                if (!doc_.layer(L)) comp->add(std::make_unique<SetLayerCommand>(Layer{L}));
+            std::vector<AddEntityCommand*> adds;
+            for (const auto& b : md.beams) {
+                const auto& p1 = md.nodes[static_cast<std::size_t>(md.index(b.n1))].p;
+                const auto& p2 = md.nodes[static_cast<std::size_t>(md.index(b.n2))].p;
+                auto e = std::make_unique<LineEntity>(p1, p2);
+                e->setLayer(std::abs(p2.z - p1.z) > 0.5 * (p2 - p1).length() ? "FEM_USTUN" : "FEM_RIGEL");
+                auto c = std::make_unique<AddEntityCommand>(std::move(e), cmd);
+                adds.push_back(c.get());
+                comp->add(std::move(c));
+            }
+            stack_.execute(std::move(comp));
+            last_.clear();
+            for (auto* c : adds) last_.push_back(c->entityId());
         }
         return true;
     }

@@ -7,6 +7,7 @@
 #include <asiacad/civil/genplan.h>
 #include <asiacad/bim/scene_export.h>
 #include <asiacad/bim/facade.h>
+#include <asiacad/bim/fem.h>
 #include <asiacad/bim/geotech.h>
 #include <asiacad/bim/kj_project.h>
 #include <asiacad/bim/steel.h>
@@ -363,7 +364,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT" || c == "LAYON" || c == "LAYUNISO" || c == "DEVCLEAR");
     }
-    CHECK(loc.canonicalCommands().size() == 120);
+    CHECK(loc.canonicalCommands().size() == 121);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -5091,4 +5092,71 @@ TEST(cli_seismic_geotech_commands) {
     CHECK(ax.find("5 aks çizildi; toplam 12 × 8 m") != std::string::npos);
     const auto u = runScript("uz", {"ZILZILA \"" + f + "\" I=12 DIR=X"});
     CHECK(u.find("✗") != std::string::npos);
+}
+TEST(fem_verification) {
+    namespace fe = asiacad::bim::fem;
+    // 1) konsol: δ = P L³ / 3EI, M0 = P L
+    fe::Model m;
+    m.mats[1] = {3.0e7, 1.25e7};
+    m.secs[1] = {0.12, 0.0016, 0.0009, 0.002};
+    for (int i = 0; i <= 10; ++i) {
+        fe::Node n; n.id = i + 1; n.p = {0.5 * i, 0, 0};
+        if (i == 0) n.fix = {true, true, true, true, true, true};
+        m.nodes.push_back(n);
+    }
+    for (int i = 0; i < 10; ++i) m.beams.push_back({i + 1, i + 1, i + 2, 1, 1, {}});
+    m.loads[11] = {0, 0, -10, 0, 0, 0};
+    auto r = fe::solveStatic(m);
+    const double d = 10.0 * 125 / (3 * 3.0e7 * 0.0016);
+    CHECK(std::abs(-r.disp[10][2] - d) / d < 1e-6);
+    CHECK(std::abs(r.reactions[1][2] - 10) < 1e-6);
+    CHECK(std::abs(std::abs(r.reactions[1][4]) - 50) < 1e-6);
+    // gorizontal (Iz) yo'nalish
+    m.loads[11] = {0, 10, 0, 0, 0, 0};
+    r = fe::solveStatic(m);
+    CHECK(std::abs(r.disp[10][1] - 10.0 * 125 / (3 * 3.0e7 * 0.0009)) < 1e-9);
+    // o'q: δ = PL/EA; buralish: θ = TL/GJ
+    m.loads[11] = {100, 0, 0, 5, 0, 0};
+    r = fe::solveStatic(m);
+    CHECK(std::abs(r.disp[10][0] - 100 * 5 / (3.0e7 * 0.12)) < 1e-12);
+    CHECK(std::abs(r.disp[10][3] - 5 * 5 / (1.25e7 * 0.002)) < 1e-12);
+    // 2) konsol, uchida massa: ω = √(3EI / mL³)
+    m.loads.clear();
+    m.mass[11] = 2.0;
+    auto modes = fe::solveModes(m, 2);
+    CHECK(modes.size() == 2);
+    const double w = std::sqrt(3 * 3.0e7 * 0.0009 / (2.0 * 125));
+    CHECK(std::abs(modes[0].omega - w) / w < 1e-6);
+    CHECK(std::abs(modes[0].meffRatio[1] - 1.0) < 1e-6);
+    // 3) shear-bino (rigellar juda qattiq) — 2 qavatli, ω analitik
+    fe::Model f = fe::frameGenerator({6}, {6}, 2, 3, 0.4, 0.4, 0.3, 0.6, 3.0e7, 0, 0);
+    f.secs[2] = {1e3, 1e3, 1e3, 1e3};
+    f.mass.clear();
+    for (const auto& n : f.nodes) if (n.p.z > 0.1) f.mass[n.id] = 10;
+    const auto fm = fe::solveModes(f, 6);
+    const double k = 4 * 12 * 3.0e7 * (0.4 * 0.4 * 0.4 * 0.4 / 12) / 27;   // 4 ustun, qavat qattiqligi
+    const double m1 = 40, w1 = std::sqrt(k / m1 * (3 - std::sqrt(5.0)) / 2);
+    double wx = 0;
+    for (const auto& md : fm) if (md.meffRatio[0] > 0.5) { wx = md.omega; break; }
+    CHECK(std::abs(wx - w1) / w1 < 0.015);   // farq — ustunlarning o'q deformatsiyasi (ag'darilish)
+    double sumX = 0;
+    for (const auto& md : fm) sumX += md.meffRatio[0];
+    CHECK(sumX > 0.999);
+    // spektr: bitta shakl uchun V = M_eff·Sa
+    const auto sp = fe::responseSpectrum(m, modes, [](double) { return 2.0; }, 1);
+    CHECK(std::abs(sp.baseShear - 4.0) < 1e-6);
+    CHECK(std::abs(sp.roof - 2.0 / (w * w)) < 1e-9);
+    // matn formati
+    const auto m2 = fe::parseModel(fe::writeModel(m));
+    CHECK(m2.nodes.size() == 11 && m2.beams.size() == 10 && m2.nodes[0].fix[5]);
+    CHECK_THROWS(fe::parseModel("BEAM 1 1 2 1 1"));
+}
+TEST(cli_fem_command) {
+    const auto s = runScript("tr", {"FEM GEN=6x3;6x2 FLOORS=9 H=3.3 MODES=12 DRAW"});
+    CHECK(s.find("Sonlu eleman modeli: 120 düğüm") != std::string::npos);
+    CHECK(s.find("Mod 1: T =") != std::string::npos);
+    CHECK(s.find("✓ Etkin kütle toplamı") != std::string::npos);
+    CHECK(s.find("taban kesme kuvveti") != std::string::npos);
+    const auto u = runScript("uz", {"STATIKA GEN=6x2 FLOORS=3 MODES=1"});
+    CHECK(u.find("✗ Samarali massa") != std::string::npos);
 }

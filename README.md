@@ -826,6 +826,16 @@ Normaga mos kelmagan elementlar 3D da qizil (xato) yoki sariq (ogohlantirish) bo
   materiallar: AC_Shisha, AC_Panel, AC_Alyuminiy); `ELEV` — fasad yoyilmasi (`FASAD_YOYILMA`); metraj — shisha/panel m², soni, profil m.
 - Menyu `Ko'rinish → Render → Fasad`.
 
+## Statika — 3D sterjenli FEM (v0.35) — `src/bim/fem.*`, `FEM` buyrug'i
+
+- Element: fazoviy sterjen, tugunda 6 erkinlik (Euler–Bernoulli, o'q, buralish, ikki tekislikda egilish).
+- Yechuvchi: lentali Xolesskiy (statik), subfazoviy iteratsiya + Yakobi (xos tebranishlar), CQC (spektral).
+- Seysmika: Lot-16 spektri (RP=475/1000/2475/5000), `PGA=` bilan masshtab, `R=` kamaytirish; samarali massa ≥ 90% tekshiruvi (QMQ 2.01.03-19).
+- `.fem` matn formati: `NODE id x y z [FIX=111111]`, `MAT id E G`, `SEC id A Iy Iz J`, `BEAM id n1 n2 mat sec`, `MASS n t`, `LOAD n fx fy fz [mx my mz]` (kN, m, t).
+- Rama generatori: `FEM GEN=6x3;6x2 FLOORS=9 H=3.3 COL=0.4x0.4 BEAM=0.3x0.6 Q=1 G=10 DRAW XLSX=natija.xlsx`.
+- Tekshiruv misollari (`fem_verification` testi): konsol PL³/3EI, o'q PL/EA, buralish TL/GJ, konsol+massa ω=√(3EI/mL³),
+  2 qavatli shear-bino (analitik ω, farq < 1,5% — ustunlarning o'q deformatsiyasi), spektral V = M_eff·Sa.
+
 ## O'rnatish (Windows)
 
 Logotip, ochilish oynasi, `.exe` ikonkasi. Inno Setup o'rnatuvchisi (`apps/win/asiacad.iss`): Visual C++ runtime avtomatik,
