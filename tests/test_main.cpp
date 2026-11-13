@@ -3,6 +3,7 @@
 #include <asiacad/bim/rebar.h>
 #include <asiacad/bim/rebar_import.h>
 #include <asiacad/bim/seismic.h>
+#include <asiacad/civil/axes.h>
 #include <asiacad/bim/geotech.h>
 #include <asiacad/bim/kj_project.h>
 #include <asiacad/bim/steel.h>
@@ -359,7 +360,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT" || c == "LAYON" || c == "LAYUNISO" || c == "DEVCLEAR");
     }
-    CHECK(loc.canonicalCommands().size() == 116);
+    CHECK(loc.canonicalCommands().size() == 117);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -4881,6 +4882,36 @@ TEST(seismic_section_modal_spectrum) {
     NEAR(nu, (1e6 - 2 * 2.5e5) / (2 * (1e6 - 2.5e5)));
     NEAR(sz::dynamicModulus(2.0, 500, nu), 2 * 2.0 * 2.5e5 * (1 + nu));
 }
+TEST(axes_grid_rect_rotated_radial) {
+    using namespace civil;
+    CHECK(axisLetter(0, true) == "A" && axisLetter(8, true) == "J" && axisLetter(24, true) == "A1");   // I va O yo'q
+    auto sp = parseAxesArgs({"X=6,6,7.5", "Y=8x3", "LET=LAT"});
+    auto es = generateAxes(sp);
+    int lines = 0, dims = 0, circles = 0;
+    for (const auto& e : es) {
+        lines += e->type() == EntityType::Line;
+        dims += e->type() == EntityType::Dimension;
+        circles += e->type() == EntityType::Circle;
+    }
+    CHECK(lines == 4 + 4);                 // 4 ta X o'q + 4 ta Y o'q
+    CHECK(circles == 2 * 8);               // ikki uchda markalar
+    CHECK(dims == 3 + 1 + 3 + 1);          // zanjir + umumiy
+    // burilgan: birinchi o'q chizig'i 30° ga burilgan
+    sp = parseAxesArgs({"X=5", "Y=4", "ANG=90", "NODIM", "ONE"});
+    es = generateAxes(sp);
+    const auto* l0 = dynamic_cast<const LineEntity*>(es.front().get());
+    CHECK(l0 && std::abs(l0->startPoint().y - l0->endPoint().y) < 1e-9);   // 90° da vertikal o'q gorizontal bo'ladi
+    // radial: 4 radial o'q, 3 yoy
+    sp = parseAxesArgs({"RAD=10;6,6", "ANGS=0;15x3", "NODIM"});
+    es = generateAxes(sp);
+    int arcs = 0;
+    lines = 0;
+    for (const auto& e : es) { arcs += e->type() == EntityType::Arc; lines += e->type() == EntityType::Line; }
+    CHECK(arcs == 3 && lines == 4);
+    CHECK_THROWS(parseAxesArgs({"X=abc"}));
+    CHECK_THROWS(parseAxesArgs({"FOO=1"}));
+}
+
 TEST(seismic_building_model_energy_A) {
     std::ifstream f(std::string(ASIACAD_EXAMPLES_DIR) + "/energetika_A_blok.seis");
     std::stringstream ss;
@@ -4961,6 +4992,8 @@ TEST(cli_seismic_geotech_commands) {
     CHECK(s.find("10 şiddet (1.04 g): sınır aşılır") != std::string::npos);
     CHECK(s.find("Kazık: çevre Qs = 1571 kN") != std::string::npos);
     CHECK(s.find("UYGUNSUZ") != std::string::npos);
+    const auto ax = runScript("tr", {"AKS X=6x2 Y=8 LET=LAT"});
+    CHECK(ax.find("5 aks çizildi; toplam 12 × 8 m") != std::string::npos);
     const auto u = runScript("uz", {"ZILZILA \"" + f + "\" I=12 DIR=X"});
     CHECK(u.find("✗") != std::string::npos);
 }

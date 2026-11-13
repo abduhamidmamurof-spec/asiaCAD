@@ -789,6 +789,14 @@ Normaga mos kelmagan elementlar 3D da qizil (xato) yoki sariq (ogohlantirish) bo
   (PGA ballga ko'ra masshtablanadi). Qavat rangi — shu ondagi perda kesish ishlatilishi, chegara oshsa qizil va "!" belgisi;
   ijro / pauza / eng katta on, tezlik, kattalashtirish; pastda yer tezlanishi grafigi.
 
+## Akslar (v0.34)
+
+- **GRIDAXES X=6,6,7.5 Y=8x3 [O=x,y] [ANG=°] [LET=LAT|CYR] [SWAP] [START=1,A] [EXT=m] [R=m] [H=m] [NODIM] [ONE]** — to'g'ri burchakli
+  (istalgan burchakka burilgan) o'qlar: doirachali markalar (raqam / harf; lotinda I, O ishlatilmaydi, GOST kirill), ikki uchda,
+  o'lcham zanjiri va umumiy o'lcham — haqiqiy DIMENSION obyektlari (`AKS`, `AKS_MARKA`, `AKS_OLCHAM` qatlamlari).
+- **GRIDAXES RAD=r0;dr… ANGS=a0;da…** — radial o'qlar (markazdan nurlar + yoylar), burchak yozuvlari va radius o'lchamlari.
+- Menyu: `Chizish → O'qlar` — oraliqlar, burilish, harflar, markalar; jonli ko'rinish. Buyruq nomlari: AKS (tr), OQLAR (uz), ОСИ (ru).
+
 ## O'rnatish (Windows)
 
 Logotip, ochilish oynasi, `.exe` ikonkasi. Inno Setup o'rnatuvchisi (`apps/win/asiacad.iss`): Visual C++ runtime avtomatik,

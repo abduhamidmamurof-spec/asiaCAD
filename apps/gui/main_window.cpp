@@ -161,7 +161,7 @@ const ActDef kActs[] = {
     {"ewtin", "terrain", "gui.act.ewtin", false},           {"ewprofile", "profile", "gui.act.ewprofile", false},
     {"ewsections", "sections", "gui.act.ewsections", false}, {"ewcarto", "cartogram", "gui.act.ewcarto", false},
     {"ewvolume", "volume", "gui.act.ewvolume", false},
-    {"seismic", "seismic", "gui.act.seismic", false}, {"geotech", "pile", "gui.act.geotech", false},
+    {"seismic", "seismic", "gui.act.seismic", false}, {"axes", "grid", "gui.act.axes", false}, {"geotech", "pile", "gui.act.geotech", false},
     {"view3d", "view3d", "gui.act.view3d", false},
     {"sheets", "sheet", "gui.act.sheets", false},
     // v0.31: Fayl / Ko'rinish / Tahlil varaqlari
@@ -721,6 +721,16 @@ void MainWindow::buildActions() {
     connect(act_["ewcarto"], &QAction::triggered, this, [this] { openEarthwork(3); });
     connect(act_["ewvolume"], &QAction::triggered, this, [this] { openEarthwork(4); });
     connect(act_["seismic"], &QAction::triggered, this, [this] { openSeismic(0); });
+    connect(act_["axes"], &QAction::triggered, this, [this] {
+        auto* d = new AxesInputDialog(loc_, !theme_.lightCanvas, this);
+        d->setAttribute(Qt::WA_DeleteOnClose);
+        connect(d, &QDialog::accepted, this, [this, d] {
+            runLine(d->command());
+            view_->zoomExtents();
+        });
+        d->show();
+        d->raise();
+    });
     connect(act_["geotech"], &QAction::triggered, this, [this] { openSeismic(1); });
     connect(act_["drive"], &QAction::triggered, this, [this] { openDrive(); });
     // ---- Fayl → Loyiha, Ko'rinish, Tahlil
@@ -901,6 +911,7 @@ void MainWindow::buildRibbon() {
                           {"gui.grp.project", {"projset"}}}},
         {"gui.tab.draw", {{"gui.grp.draw", {"line", "pline", "circle", "arc"}, {"rect", "polygon", "ellipse", "spline", "point", "hatch"}, true},
                           {"gui.grp.textsym", {"text", "symbols"}},
+                          {"gui.grp.axes", {"axes"}},
                           {"gui.grp.modify", {"select"}, {"move", "copy", "stretch", "rotate", "mirror", "scale", "trim", "extend", "fillet",
                                                           "chamfer", "array", "offset", "erase", "explode", "join", "break", "matchprop"}},
                           {"gui.grp.layers", {}, {"layprops", "laymcur", "laymatch", "layoff", "layfrz", "laylck", "layulk", "layiso", "layuniso", "layon"}, true, 2}}},

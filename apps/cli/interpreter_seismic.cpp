@@ -7,6 +7,7 @@
 #include "interpreter.h"
 
 #include <asiacad/bim/geotech.h>
+#include <asiacad/civil/axes.h>
 #include <asiacad/bim/seismic.h>
 #include <asiacad/core/error.h>
 #include <asiacad/i18n/utf8.h>
@@ -40,6 +41,24 @@ bool Interpreter::dispatchSeismic(const std::string& cmd, const Args& a) {
         if (it == m.end()) { if (required) throw usage(); return def; }
         return parseNumber(it->second);
     };
+    if (cmd == "GRIDAXES") {   // aks to'ri (to'g'ri burchakli / burilgan / radial), markalar va o'lcham zanjiri
+        if (a.empty()) throw usage();
+        civil::AxesSpec sp;
+        try {
+            sp = civil::parseAxesArgs(a);
+        } catch (const std::invalid_argument& e) {
+            throw Error("axes.err.arg", {e.what()});
+        }
+        auto es = civil::generateAxes(sp);
+        int lines = 0;
+        for (const auto& e : es) lines += e->layer() == "AKS";
+        addLayered(cmd, std::move(es));
+        double W = 0, D = 0;
+        for (double d : sp.radial ? sp.da : sp.dx) W += d;
+        for (double d : sp.radial ? sp.dr : sp.dy) D += d;
+        say(sp.radial ? "axes.msg.radial" : "axes.msg.done", {std::to_string(lines), std::format("{:g}", W), std::format("{:g}", D)});
+        return true;
+    }
     if (cmd == "SEISMIC") {
         if (a.empty()) throw usage();
         std::ifstream f(a[0], std::ios::binary);

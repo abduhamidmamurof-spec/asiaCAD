@@ -1,4 +1,6 @@
 #include "generator_dialogs.h"
+
+#include <asiacad/civil/axes.h>
 #include "theme.h"
 
 #include <asiacad/core/entities.h>
@@ -284,6 +286,149 @@ void GridInputDialog::update_() {
     info_->setText(t("gui.gen.grid.info", {QString::number(g.dx.size() + 1), QString::number(g.dy.size() + 1), QString::number(n), f2(W), f2(D),
                                            QString::number(W * D * g.floors, 'f', 0), f2(g.floors * g.floorH)}));
     prev_->setEntities(civil::generateGrid(g));
+}
+
+// ---------------------------------------------------------------- AKSLAR
+AxesInputDialog::AxesInputDialog(const i18n::Localizer& loc, bool dark, QWidget* parent) : GenBase(loc, dark, parent) {
+    setWindowTitle(t("gui.axes.title"));
+    resize(860, 540);
+    auto* root = new QHBoxLayout(this);
+    auto* left = new QWidget(this);
+    left->setMinimumWidth(340);
+    auto* lv = new QVBoxLayout(left);
+    auto* hint = new QLabel(t("gui.axes.hint"), left);
+    hint->setWordWrap(true);
+    lv->addWidget(hint);
+    auto dspin = [&](double lo, double hi, double step, int dec, double v) {
+        auto* sb = new QDoubleSpinBox(left);
+        sb->setRange(lo, hi);
+        sb->setSingleStep(step);
+        sb->setDecimals(dec);
+        sb->setValue(v);
+        return sb;
+    };
+    radial_ = new QCheckBox(t("gui.axes.radial"), left);
+    dx_ = new QLineEdit("6x4,7.5", left);
+    dy_ = new QLineEdit("8x3", left);
+    x0_ = dspin(-1e7, 1e7, 1, 3, 0);
+    y0_ = dspin(-1e7, 1e7, 1, 3, 0);
+    ang_ = dspin(-360, 360, 5, 2, 0);
+    ext_ = dspin(0, 50, 0.5, 2, 2.0);
+    br_ = dspin(0.1, 5, 0.1, 2, 0.5);
+    let_ = new QComboBox(left);
+    let_->addItem("A B C D …", "LAT");
+    let_->addItem(QString::fromUtf8("А Б В Г … (GOST)"), "CYR");
+    swap_ = new QCheckBox(t("gui.axes.swap"), left);
+    dims_ = new QCheckBox(t("gui.axes.dims"), left);
+    dims_->setChecked(true);
+    both_ = new QCheckBox(t("gui.axes.both"), left);
+    both_->setChecked(true);
+    auto* form = new QFormLayout;
+    form->addRow(radial_);
+    lx_ = new QLabel(left);
+    ly_ = new QLabel(left);
+    form->addRow(lx_, dx_);
+    form->addRow(ly_, dy_);
+    auto* o = new QHBoxLayout;
+    o->addWidget(x0_);
+    o->addWidget(y0_);
+    form->addRow(t("gui.axes.origin"), o);
+    form->addRow(t("gui.axes.angle"), ang_);
+    form->addRow(t("gui.axes.letters"), let_);
+    form->addRow(swap_);
+    form->addRow(t("gui.axes.ext"), ext_);
+    form->addRow(t("gui.axes.bubble"), br_);
+    form->addRow(dims_);
+    form->addRow(both_);
+    lv->addLayout(form);
+    info_ = new QLabel(left);
+    info_->setWordWrap(true);
+    lv->addWidget(info_);
+    lv->addStretch(1);
+    auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, left);
+    bb->button(QDialogButtonBox::Ok)->setText(t("gui.gen.draw"));
+    bb->button(QDialogButtonBox::Cancel)->setText(t("gui.gen.cancel"));
+    lv->addWidget(bb);
+    root->addWidget(left);
+    prev_ = new PlanPreview(this);
+    prev_->setDark(dark);
+    root->addWidget(prev_, 1);
+    connect(bb, &QDialogButtonBox::accepted, this, [this] { if (valid()) accept(); });
+    connect(bb, &QDialogButtonBox::rejected, this, &QDialog::reject);
+    connect(radial_, &QCheckBox::toggled, this, [this](bool on) {
+        dx_->setText(on ? "0;15x6" : "6x4,7.5");
+        dy_->setText(on ? "8;6x3" : "8x3");
+        update_();
+    });
+    for (auto* e : {dx_, dy_}) connect(e, &QLineEdit::textChanged, this, [this] { update_(); });
+    for (auto* sb : {x0_, y0_, ang_, ext_, br_}) connect(sb, &QDoubleSpinBox::valueChanged, this, [this] { update_(); });
+    for (auto* c : {swap_, dims_, both_}) connect(c, &QCheckBox::toggled, this, [this] { update_(); });
+    connect(let_, &QComboBox::currentIndexChanged, this, [this] { update_(); });
+    update_();
+}
+
+void AxesInputDialog::setSpacing(const QString& dx, const QString& dy) {
+    dx_->setText(dx);
+    dy_->setText(dy);
+}
+void AxesInputDialog::setRadial(bool on) { radial_->setChecked(on); }
+
+QStringList AxesInputDialog::args() const {
+    QStringList a;
+    auto clean = [](QString v) { return v.remove(' '); };
+    const bool rad = radial_->isChecked();
+    if (rad) {
+        if (!dx_->text().trimmed().isEmpty()) a << "ANGS=" + clean(dx_->text());
+        if (!dy_->text().trimmed().isEmpty()) a << "RAD=" + clean(dy_->text());
+    } else {
+        if (!dx_->text().trimmed().isEmpty()) a << "X=" + clean(dx_->text());
+        if (!dy_->text().trimmed().isEmpty()) a << "Y=" + clean(dy_->text());
+        if (std::abs(ang_->value()) > 1e-9) a << "ANG=" + QString::number(ang_->value());
+    }
+    if (std::abs(x0_->value()) > 1e-9 || std::abs(y0_->value()) > 1e-9) a << QString("O=%1,%2").arg(x0_->value()).arg(y0_->value());
+    a << "LET=" + let_->currentData().toString();
+    if (swap_->isChecked()) a << "SWAP";
+    a << "EXT=" + QString::number(ext_->value()) << "R=" + QString::number(br_->value());
+    if (!dims_->isChecked()) a << "NODIM";
+    if (!both_->isChecked()) a << "ONE";
+    return a;
+}
+
+bool AxesInputDialog::valid() const {
+    std::vector<std::string> v;
+    for (const auto& s : args()) v.push_back(s.toStdString());
+    try {
+        const auto sp = civil::parseAxesArgs(v);
+        return sp.radial ? !(sp.da.empty() && sp.dr.empty()) : !(sp.dx.empty() && sp.dy.empty());
+    } catch (...) {
+        return false;
+    }
+}
+
+QString AxesInputDialog::command() const { return "GRIDAXES " + args().join(' '); }
+
+void AxesInputDialog::update_() {
+    const bool rad = radial_->isChecked();
+    lx_->setText(t(rad ? "gui.axes.angs" : "gui.axes.dx"));
+    ly_->setText(t(rad ? "gui.axes.rads" : "gui.axes.dy"));
+    ang_->setEnabled(!rad);
+    std::vector<std::string> v;
+    for (const auto& s : args()) v.push_back(s.toStdString());
+    try {
+        const auto sp = civil::parseAxesArgs(v);
+        auto es = civil::generateAxes(sp);
+        double W = 0, D = 0;
+        for (double d : rad ? sp.da : sp.dx) W += d;
+        for (double d : rad ? sp.dr : sp.dy) D += d;
+        const auto n1 = (rad ? sp.da.size() : sp.dx.size()) + 1, n2 = (rad ? sp.dr.size() : sp.dy.size()) + 1;
+        info_->setText(t(rad ? "gui.axes.info_r" : "gui.axes.info", {QString::number(n1), QString::number(n2), f2(W), f2(D)}) + "\n" + command());
+        dx_->setStyleSheet("");
+        dy_->setStyleSheet("");
+        prev_->setEntities(std::move(es));
+    } catch (const std::exception& e) {
+        info_->setText(t("axes.err.arg", {QString::fromUtf8(e.what())}));
+        prev_->setEntities({});
+    }
 }
 
 // ---------------------------------------------------------------- ALIGN

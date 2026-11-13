@@ -1943,6 +1943,19 @@ int main(int argc, char** argv) {
         CHECK(tw.closeTabAt(tabs->currentIndex()) && tw.drawingCount() == nd - 1 && tw.activeDrawing() != e);
         CHECK(!tw.ribbon()->isHidden() || !tw.isStart());
     }
+    {   // akslar dialogi: jonli ko'rinish, buyruq, radial
+        std::printf("axes dialog\n");
+        asiacad::gui::AxesInputDialog ad(loc, true);
+        ad.setSpacing("6x3", "8x2");
+        CHECK(ad.valid());
+        CHECK(ad.preview()->count() > 20);
+        CHECK(ad.command().startsWith("GRIDAXES X=6x3 Y=8x2"));
+        if (const char* shot = std::getenv("ASIACAD_SHAKE_SHOT")) { ad.resize(1000, 600); ad.show(); QApplication::processEvents(); ad.grab().save(QString(shot) + "_axes.png"); }
+        ad.setRadial(true);
+        CHECK(ad.valid() && ad.command().contains("RAD="));
+        ad.setSpacing("abc", "");
+        CHECK(!ad.valid());
+    }
     {   // zilzila: tebranish animatsiyasi
         std::printf("seismic shake view\n");
         asiacad::gui::SeismicDialog sd(loc);

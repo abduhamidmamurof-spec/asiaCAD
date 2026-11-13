@@ -176,6 +176,7 @@ const char* commandSyntax(const std::string& c) {
         {"CARTOGRAM", "EG=sel FG=sel|Z=z|BALANCE [IX=‰] [IY=‰] [BASE=x,y] [CELL=20] [BOUND=id] [ORIGIN=x,y] [TH=h] [NODRAW] [XLSX=f]"},
         {"VOLUME", "EG=sel FG=sel|Z=z|BALANCE [IX=‰] [IY=‰] [BASE=x,y] [BOUND=id] [CELL=m]"},
         {"SETPROP", "sel KEY=value [KEY=value ...]"},
+        {"GRIDAXES", "X=6,6,7.5 Y=8x3 [O=x,y] [ANG=°] [LET=LAT|CYR] [SWAP] [START=1,A] [EXT=m] [R=m] [H=m] [NODIM] [ONE] | RAD=r0;dr… ANGS=a0;da…"},
         {"SEISMIC", "file.seis [I=6..12|PGA=g] [DIR=X|Y] [SWEEP] [XLSX=f]"},
         {"PILECAP", "D=m L=m R=kPa F=kPa [GRS=1.5] [GRU=2] [LOAD=kN]"},
         {"BEARING", "B=m [L=m] [DF=m] [C=kPa] [PHI=deg] [G=kN/m3] [FS=3]"},

@@ -73,6 +73,7 @@ add_library(asiacad_civil
   src/civil/corridor.cpp
   src/civil/drawset.cpp
   src/civil/generators.cpp
+  src/civil/axes.cpp
   src/civil/drive.cpp
   src/civil/symbols.cpp
   src/civil/survey.cpp

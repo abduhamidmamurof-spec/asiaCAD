@@ -76,6 +76,29 @@ private:
     PlanPreview* prev_ = nullptr;
 };
 
+// Akslar: oraliqlar (X/Y yoki radial), burilish, harflar, markalar, o'lcham zanjiri; jonli ko'rinish
+class AxesInputDialog : public GenBase {
+    Q_OBJECT
+public:
+    AxesInputDialog(const i18n::Localizer& loc, bool dark, QWidget* parent = nullptr);
+    QString command() const;           // "GRIDAXES X=… Y=…"
+    void setSpacing(const QString& dx, const QString& dy);
+    void setRadial(bool on);
+    PlanPreview* preview() const { return prev_; }
+    bool valid() const;
+
+private:
+    void update_();
+    QStringList args() const;
+    QCheckBox* radial_ = nullptr;
+    QLineEdit *dx_ = nullptr, *dy_ = nullptr;
+    QDoubleSpinBox *x0_ = nullptr, *y0_ = nullptr, *ang_ = nullptr, *ext_ = nullptr, *br_ = nullptr;
+    QComboBox* let_ = nullptr;
+    QCheckBox *swap_ = nullptr, *dims_ = nullptr, *both_ = nullptr;
+    QLabel *lx_ = nullptr, *ly_ = nullptr, *info_ = nullptr;
+    PlanPreview* prev_ = nullptr;
+};
+
 class AlignInputDialog : public GenBase {
     Q_OBJECT
 public:
