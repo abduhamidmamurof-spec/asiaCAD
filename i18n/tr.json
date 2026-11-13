@@ -154,6 +154,7 @@
     "RULES": ["KURALLAR"]
   },
   "messages": {
+    "gui.splash.loading": "Yükleniyor…",
     "app.banner": "AsiaCAD {0} — Çizim çekirdeği. YARDIM yazın.",
     "app.prompt": "Komut: ",
     "app.script_open_failed": "Betik açılamadı: {0}",

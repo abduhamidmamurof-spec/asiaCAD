@@ -154,6 +154,7 @@
     "RULES": ["QOIDALAR", "ҚОИДАЛАР"]
   },
   "messages": {
+    "gui.splash.loading": "Yuklanmoqda…",
     "app.banner": "AsiaCAD {0} — Chizma yadrosi. YORDAM deb yozing.",
     "app.prompt": "Buyruq: ",
     "app.script_open_failed": "Skript ochilmadi: {0}",

@@ -154,6 +154,7 @@
     "RULES": ["ЕРЕЖЕЛЕР"]
   },
   "messages": {
+    "gui.splash.loading": "Жүктелуде…",
     "app.banner": "AsiaCAD {0} — сызба ядросы. АНЫҚТАМА деп жазыңыз.",
     "app.prompt": "Пәрмен: ",
     "app.script_open_failed": "Скрипт ашылмады: {0}",

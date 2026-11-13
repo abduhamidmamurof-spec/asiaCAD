@@ -154,6 +154,7 @@
     "RULES": ["RULES"]
   },
   "messages": {
+    "gui.splash.loading": "Loading…",
     "app.banner": "AsiaCAD {0} — Drawing Engine. Type HELP.",
     "app.prompt": "Command: ",
     "app.script_open_failed": "Cannot open script: {0}",

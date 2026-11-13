@@ -31,6 +31,12 @@
 #include <QTabWidget>
 #include <QTabBar>
 #include <QSettings>
+#include <QSplashScreen>
+#include <QIcon>
+#include <QDateTime>
+#include <fstream>
+#include <memory>
+#include <mutex>
 
 #include <cstdio>
 
@@ -53,9 +59,28 @@ fs::path findI18nDir(const QString& cli) {
         if (fs::is_directory(p, ec)) return p;
     return {};
 }
+// Ishga tushish jurnali: dastur ochilmasa sababi %TEMP%\\asiacad.log da qoladi
+fs::path logPath() { std::error_code ec; return fs::temp_directory_path(ec) / "asiacad.log"; }
+void logHandler(QtMsgType t, const QMessageLogContext&, const QString& msg) {
+    static std::mutex m;
+    std::lock_guard<std::mutex> g(m);
+    std::ofstream o(logPath(), std::ios::app);
+    const char* k = t == QtFatalMsg ? "FATAL" : t == QtCriticalMsg ? "CRIT" : t == QtWarningMsg ? "WARN" : "INFO";
+    o << QDateTime::currentDateTime().toString(Qt::ISODate).toStdString() << " " << k << " " << msg.toStdString() << "\n";
+}
+// Oldingi ishga tushish oyna ochilmasdan tugagan bo'lsa — grafik drayver muammosi: dasturiy OpenGL (opengl32sw.dll)
+fs::path startFlag() { std::error_code ec; return fs::temp_directory_path(ec) / "asiacad_start.flag"; }
 } // namespace
 
 int main(int argc, char** argv) {
+    {
+        std::error_code ec;
+        if (std::getenv("ASIACAD_SOFTWARE_GL") || fs::exists(startFlag(), ec)) QCoreApplication::setAttribute(Qt::AA_UseSoftwareOpenGL);
+        std::ofstream(startFlag()) << "1";
+        std::error_code ec2;
+        if (fs::exists(logPath(), ec2) && fs::file_size(logPath(), ec2) > 512 * 1024) fs::remove(logPath(), ec2);
+        qInstallMessageHandler(logHandler);
+    }
     QSurfaceFormat fmt;
     fmt.setSamples(4);  // chiziqlar silliq
     QSurfaceFormat::setDefaultFormat(fmt);
@@ -63,6 +88,8 @@ int main(int argc, char** argv) {
     QApplication::setApplicationName("AsiaCAD");
     asiacad::dwg::useBundled(QCoreApplication::applicationDirPath().toStdString());   // tarqatmadagi LibreDWG
     QApplication::setOrganizationName("AsiaCAD");
+    QApplication::setWindowIcon(QIcon(":/res/icon256.png"));
+    qInfo("AsiaCAD start, software GL: %d", int(QCoreApplication::testAttribute(Qt::AA_UseSoftwareOpenGL)));
     QFont f = QApplication::font();
     f.setPointSizeF(10);
     QApplication::setFont(f);
@@ -182,6 +209,14 @@ int main(int argc, char** argv) {
     }
     if (!loc.setLanguage(lang.toStdString())) loc.setLanguage("en");
 
+    // Ochilish oynasi (logotip) — faqat oddiy ishga tushirishda
+    std::unique_ptr<QSplashScreen> splash;
+    if (persist) {
+        splash = std::make_unique<QSplashScreen>(QPixmap(":/res/splash.png"));
+        splash->show();
+        splash->showMessage(QString::fromStdString(loc.tr("gui.splash.loading")), Qt::AlignRight | Qt::AlignBottom, QColor("#9fb3d9"));
+        app.processEvents();
+    }
     asiacad::gui::MainWindow w(loc);
     if (persist) w.restoreUiState(mode.isEmpty());   // oyna o'lchami, panellar, lenta varag'i, rejim, oxirgi fayllar
     if (!mode.isEmpty()) w.setMode(asiacad::gui::modeFromKey(mode));
@@ -198,6 +233,9 @@ int main(int argc, char** argv) {
     }
     else if (tooBig) { w.resize(av.size() - QSize(16, 40)); w.move(av.topLeft()); w.show(); }
     else w.show();
+    if (splash) splash->finish(&w);
+    // oyna ochildi — keyingi ishga tushishda oddiy (apparat) OpenGL
+    QTimer::singleShot(6000, [] { std::error_code ec; fs::remove(startFlag(), ec); });
     if (!file.isEmpty()) w.openPath(QFileInfo(file).absoluteFilePath());   // "Chizma1" varag'ida (bo'sh bo'lsa) yoki yangi varaqda
     for (const auto& c : cmds) w.runLine(c);
     if (!ifcFiles.isEmpty()) {

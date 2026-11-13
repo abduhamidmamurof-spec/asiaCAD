@@ -64,6 +64,8 @@ add_library(asiacad_civil
   src/bim/templates.cpp
   src/bim/ifc.cpp
   src/bim/norms.cpp
+  src/bim/seismic.cpp
+  src/bim/geotech.cpp
   src/civil/excel.cpp
   src/civil/utility.cpp
   src/civil/road.cpp
@@ -111,6 +113,7 @@ if(ASIACAD_BUILD_GUI)
   find_package(Qt6 QUIET COMPONENTS Widgets OpenGLWidgets)
   if(Qt6_FOUND)
     set(CMAKE_AUTOMOC ON)
+    set(CMAKE_AUTORCC ON)
     add_executable(asiacad-gui
       apps/gui/main.cpp
       apps/gui/main_window.cpp
@@ -122,6 +125,7 @@ if(ASIACAD_BUILD_GUI)
       apps/gui/theme.cpp
       apps/gui/icons.cpp
       apps/gui/command_palette.cpp apps/gui/sewer_dialog.cpp apps/gui/pipe3d_view.cpp apps/gui/model3d_view.cpp apps/gui/building_dialog.cpp apps/gui/ifc_panel.cpp apps/gui/norm_rules_dialog.cpp apps/gui/rebar_dialog.cpp apps/gui/template_sidebar.cpp apps/gui/excel_link.cpp apps/gui/drawing_set_widget.cpp apps/gui/utility_dialog.cpp apps/gui/road_dialog.cpp apps/gui/waterway_dialog.cpp apps/gui/corridor_dialog.cpp apps/gui/generator_dialogs.cpp apps/gui/templates_dialog.cpp apps/gui/survey_dialog.cpp apps/gui/earthwork_dialog.cpp apps/gui/drive_view.cpp apps/gui/drive_dialog.cpp apps/gui/draft_panels.cpp
+      apps/gui/res/asiacad.qrc
     )
     target_link_libraries(asiacad-gui PRIVATE asiacad_cmd Qt6::Widgets Qt6::OpenGLWidgets)
     target_compile_definitions(asiacad-gui PRIVATE ASIACAD_I18N_DIR="${ASIACAD_I18N_SRC}")
@@ -129,13 +133,13 @@ if(ASIACAD_BUILD_GUI)
       COMMAND ${CMAKE_COMMAND} -E copy_directory ${ASIACAD_I18N_SRC} $<TARGET_FILE_DIR:asiacad-gui>/i18n)
     if(WIN32)
       set_target_properties(asiacad-gui PROPERTIES WIN32_EXECUTABLE ON)
-      target_sources(asiacad-gui PRIVATE apps/win/asiacad.manifest)
+      target_sources(asiacad-gui PRIVATE apps/win/asiacad.manifest apps/win/asiacad.rc)
     endif()
     install(TARGETS asiacad-gui RUNTIME DESTINATION bin)
 
     # GUI tutun testi (ekransiz)
     add_executable(asiacad_gui_tests tests/gui_smoke.cpp
-      apps/gui/main_window.cpp apps/gui/main_window_tabs.cpp apps/gui/viewport.cpp apps/gui/theme.cpp apps/gui/icons.cpp apps/gui/command_palette.cpp apps/gui/sewer_dialog.cpp apps/gui/pipe3d_view.cpp apps/gui/model3d_view.cpp apps/gui/building_dialog.cpp apps/gui/ifc_panel.cpp apps/gui/norm_rules_dialog.cpp apps/gui/rebar_dialog.cpp apps/gui/template_sidebar.cpp apps/gui/excel_link.cpp apps/gui/drawing_set_widget.cpp apps/gui/utility_dialog.cpp apps/gui/road_dialog.cpp apps/gui/waterway_dialog.cpp apps/gui/corridor_dialog.cpp apps/gui/generator_dialogs.cpp apps/gui/templates_dialog.cpp apps/gui/survey_dialog.cpp apps/gui/earthwork_dialog.cpp apps/gui/drive_view.cpp apps/gui/drive_dialog.cpp apps/gui/draft_panels.cpp apps/gui/sheet_view.cpp apps/gui/smart_panel.cpp apps/gui/prop_panel.cpp apps/gui/bim_props.cpp)
+      apps/gui/main_window.cpp apps/gui/main_window_tabs.cpp apps/gui/viewport.cpp apps/gui/theme.cpp apps/gui/icons.cpp apps/gui/command_palette.cpp apps/gui/sewer_dialog.cpp apps/gui/pipe3d_view.cpp apps/gui/model3d_view.cpp apps/gui/building_dialog.cpp apps/gui/ifc_panel.cpp apps/gui/norm_rules_dialog.cpp apps/gui/rebar_dialog.cpp apps/gui/template_sidebar.cpp apps/gui/excel_link.cpp apps/gui/drawing_set_widget.cpp apps/gui/utility_dialog.cpp apps/gui/road_dialog.cpp apps/gui/waterway_dialog.cpp apps/gui/corridor_dialog.cpp apps/gui/generator_dialogs.cpp apps/gui/templates_dialog.cpp apps/gui/survey_dialog.cpp apps/gui/earthwork_dialog.cpp apps/gui/drive_view.cpp apps/gui/drive_dialog.cpp apps/gui/draft_panels.cpp apps/gui/sheet_view.cpp apps/gui/smart_panel.cpp apps/gui/prop_panel.cpp apps/gui/bim_props.cpp apps/gui/res/asiacad.qrc)
     target_include_directories(asiacad_gui_tests PRIVATE apps/gui)
     target_link_libraries(asiacad_gui_tests PRIVATE asiacad_cmd Qt6::Widgets Qt6::OpenGLWidgets)
     target_compile_definitions(asiacad_gui_tests PRIVATE ASIACAD_I18N_DIR="${ASIACAD_I18N_SRC}" ASIACAD_EXAMPLES_DIR="${CMAKE_SOURCE_DIR}/examples")
