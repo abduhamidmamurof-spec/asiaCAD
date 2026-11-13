@@ -161,7 +161,7 @@ const ActDef kActs[] = {
     {"ewtin", "terrain", "gui.act.ewtin", false},           {"ewprofile", "profile", "gui.act.ewprofile", false},
     {"ewsections", "sections", "gui.act.ewsections", false}, {"ewcarto", "cartogram", "gui.act.ewcarto", false},
     {"ewvolume", "volume", "gui.act.ewvolume", false},
-    {"seismic", "seismic", "gui.act.seismic", false}, {"axes", "grid", "gui.act.axes", false}, {"genplan", "city", "gui.act.genplan", false}, {"export3d", "ptexport", "gui.act.export3d", false}, {"geotech", "pile", "gui.act.geotech", false},
+    {"seismic", "seismic", "gui.act.seismic", false}, {"axes", "grid", "gui.act.axes", false}, {"genplan", "city", "gui.act.genplan", false}, {"export3d", "ptexport", "gui.act.export3d", false}, {"facade", "building", "gui.act.facade", false}, {"geotech", "pile", "gui.act.geotech", false},
     {"view3d", "view3d", "gui.act.view3d", false},
     {"sheets", "sheet", "gui.act.sheets", false},
     // v0.31: Fayl / Ko'rinish / Tahlil varaqlari
@@ -729,6 +729,22 @@ void MainWindow::buildActions() {
         if (!ifc_.empty() && !ifc_.front().path.isEmpty()) line += QString(" \"IFC=%1\"").arg(ifc_.front().path);
         runLine(line);
     });
+    connect(act_["facade"], &QAction::triggered, this, [this] {
+        // fasad: yuklangan IFC bo'lsa — uning qavatlaridan, bo'lmasa chizmadagi kontur (FASAD/KONTUR qatlami)
+        QStringList types{t("gui.fc.curtain"), t("gui.fc.band"), t("gui.fc.punched")};
+        bool ok = false;
+        const QString tp = QInputDialog::getItem(this, t("gui.act.facade"), t("gui.fc.type"), types, 0, false, &ok);
+        if (!ok) return;
+        const char* key = tp == types[0] ? "CURTAIN" : tp == types[1] ? "BAND" : "PUNCHED";
+        QString line = QString("FACADE TYPE=%1 ELEV").arg(key);
+        if (!ifc_.empty() && !ifc_.front().path.isEmpty()) line += QString(" \"IFC=%1\"").arg(ifc_.front().path);
+        else {
+            const int n = QInputDialog::getInt(this, t("gui.act.facade"), t("gui.fc.floors"), 5, 1, 200, 1, &ok);
+            if (!ok) return;
+            line += QString(" FLOORS=%1").arg(n);
+        }
+        runLine(line);
+    });
     connect(act_["genplan"], &QAction::triggered, this, [this] {
         auto* d = new GenplanDialog(loc_, !theme_.lightCanvas, doc_, this);
         d->setAttribute(Qt::WA_DeleteOnClose);
@@ -951,7 +967,7 @@ void MainWindow::buildRibbon() {
                           {"gui.grp.camera", {"cam3d", "cut3d", "drive"}},
                           {"gui.grp.cats", {"cats3d"}},
                           {"gui.grp.sheets", {"sheets"}},
-                          {"gui.grp.render", {"export3d"}},
+                          {"gui.grp.render", {"facade", "export3d"}},
                           {"gui.grp.zoom", {"extents"}, {"zoomin", "zoomout", "grid"}},
                           {"gui.grp.panels", {}, {"pnlayers", "pnprops", "pncmd"}}}},
         {"gui.tab.analyze", {{"gui.grp.seismic", {"seismic", "geotech"}},

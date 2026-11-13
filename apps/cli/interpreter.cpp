@@ -178,6 +178,7 @@ const char* commandSyntax(const std::string& c) {
         {"SETPROP", "sel KEY=value [KEY=value ...]"},
         {"GRIDAXES", "X=6,6,7.5 Y=8x3 [O=x,y] [ANG=°] [LET=LAT|CYR] [SWAP] [START=1,A] [EXT=m] [R=m] [H=m] [NODIM] [ONE] | RAD=r0;dr… ANGS=a0;da…"},
         {"EXPORT3D", "file.gltf|file.obj [IFC=file.ifc] [BUILDING] [GENPLAN] [NOMARKERS] [DATE=2026-06-21] [TIME=16:00]"},
+        {"FACADE", "IFC=file.ifc | FLOORS=n [H=3.3] [Z0=0] [LAYER=name] [TYPE=CURTAIN|BAND|PUNCHED] [MODULE=1.5] [SPANDREL=m] [OFFSET=m] [WIN=1.5x1.8] [SILL=0.9] [ELEV] [XLSX=f]"},
         {"GENPLAN", "[MAP=layer:ROAD|SIDEWALK|GREEN|PARKING|BUILDING|PLAYGROUND|RAMP|PATH|NONE,…] [CURB=15;8] [STALL=2.5x5] [NOCURB] [NOPARK] [LAYERS] [XLSX=f]"},
         {"SEISMIC", "file.seis [I=6..12|PGA=g] [DIR=X|Y] [SWEEP] [XLSX=f]"},
         {"PILECAP", "D=m L=m R=kPa F=kPa [GRS=1.5] [GRU=2] [LOAD=kN]"},

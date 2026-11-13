@@ -6,6 +6,7 @@
 #include <asiacad/civil/axes.h>
 #include <asiacad/civil/genplan.h>
 #include <asiacad/bim/scene_export.h>
+#include <asiacad/bim/facade.h>
 #include <asiacad/bim/geotech.h>
 #include <asiacad/bim/kj_project.h>
 #include <asiacad/bim/steel.h>
@@ -362,7 +363,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT" || c == "LAYON" || c == "LAYUNISO" || c == "DEVCLEAR");
     }
-    CHECK(loc.canonicalCommands().size() == 119);
+    CHECK(loc.canonicalCommands().size() == 120);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -4884,6 +4885,36 @@ TEST(seismic_section_modal_spectrum) {
     NEAR(nu, (1e6 - 2 * 2.5e5) / (2 * (1e6 - 2.5e5)));
     NEAR(sz::dynamicModulus(2.0, 500, nu), 2 * 2.0 * 2.5e5 * (1 + nu));
 }
+TEST(facade_curtain_band_punched) {
+    using namespace bim;
+    // 30×15 kontur, 3 qavat × 3.5 m, modul 1.5 → har qavat: 20+10+20+10 = 60 segment
+    Document doc;
+    auto pl = std::make_unique<PolylineEntity>(std::vector<Vec3>{{0, 0, 0}, {30, 0, 0}, {30, 15, 0}, {0, 15, 0}}, true);
+    pl->setLayer("FASAD_KONTUR");
+    doc.add(std::move(pl));
+    const auto floors = facadeFloorsFromDoc(doc, "", 3, 3.5, 0);
+    CHECK(floors.size() == 3);
+    FacadeSpec sp;
+    sp.offset = 0;
+    sp.spandrel = 0.6;
+    auto r = buildFacade(floors, sp);
+    CHECK(r.glassCount == 180 && r.panelCount == 180);
+    CHECK(std::abs(r.glassArea - 90 * 3 * 2.9) < 1e-6);   // perimetr 90 × (3.5 − 0.6) × 3
+    CHECK(std::abs(r.panelArea - 90 * 3 * 0.6) < 1e-6);
+    CHECK(std::abs(r.perimeter - 90) < 1e-9 && std::abs(r.height - 10.5) < 1e-9);
+    sp.type = FacadeType::Punched;
+    r = buildFacade(floors, sp);
+    CHECK(r.glassCount == 180 && std::abs(r.glassArea - 180 * 1.1 * 1.8) < 1e-6);   // deraza eni = modul − 0.4
+    CHECK(std::abs(r.glassArea + r.panelArea - 90 * 10.5) < 1e-6);                   // yaxlit + shisha = butun fasad
+    const auto es = facadeEntities(r);
+    CHECK(!es.empty() && es.front()->layer().rfind("FASAD_", 0) == 0);
+    CHECK(!facadeElevation(r, floors, {0, -50, 0}, 0.5).empty());
+    // IFC'dan: A blok namunaviy IFC (bo'lsa) — kontur rastrdan
+    FacadeType t;
+    CHECK(facadeTypeFromKey("vitraj", t) && t == FacadeType::Curtain);
+    CHECK(!facadeTypeFromKey("xyz", t));
+}
+
 TEST(scene_export_prism_gltf_obj_sun) {
     using namespace bim;
     Scene sc;

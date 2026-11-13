@@ -11,6 +11,7 @@
 #include <asiacad/civil/genplan.h>
 #include <asiacad/bim/scene_export.h>
 #include <asiacad/bim/building.h>
+#include <asiacad/bim/facade.h>
 #include <filesystem>
 #include <asiacad/core/commands.h>
 #include <asiacad/bim/seismic.h>
@@ -92,6 +93,24 @@ bool Interpreter::dispatchSeismic(const std::string& cmd, const Args& a) {
             const auto plan = bim::readPlan(doc_, lm);
             if (!plan.empty()) { bim::addBuilding(sc, bim::buildModel(plan, bp)); ++parts; }
         }
+        // chizmadagi 3D to'rlar (fasad va boshqalar): qatlam → material
+        doc_.forEach([&](const IEntity& e) {
+            const auto* me = dynamic_cast<const MeshEntity*>(&e);
+            if (!me) return;
+            const std::string L = utf8::toUpper(e.layer());
+            const std::string mat = L.find("SHISHA") != std::string::npos || L.find("GLASS") != std::string::npos ? "AC_Shisha"
+                                    : L.find("PROFIL") != std::string::npos                                          ? "AC_Alyuminiy"
+                                    : L.find("PANEL") != std::string::npos                                           ? "AC_Panel"
+                                                                                                                     : "AC_Boshqa";
+            const auto& v = me->vertices();
+            for (const auto& f : me->faces()) {
+                auto idx = [&](int i) { return v[static_cast<std::size_t>(std::abs(i) - (i < 0 ? 1 : 0))]; };
+                if (f.a < 0 || f.b < 0 || f.c < 0 || static_cast<std::size_t>(std::max({f.a, f.b, f.c})) >= v.size()) continue;
+                sc.add(mat, {idx(f.a), idx(f.b), idx(f.c)});
+                if (f.d >= 0 && static_cast<std::size_t>(f.d) < v.size()) sc.add(mat, {idx(f.a), idx(f.c), idx(f.d)});
+            }
+            ++parts;
+        });
         // genreja: yer qoplamalari (yupqa qatlam) + markerlar
         {
             civil::GenplanSpec gs;
@@ -189,6 +208,83 @@ bool Interpreter::dispatchSeismic(const std::string& cmd, const Args& a) {
         for (const auto& mk : sc.markers) ++cnt[mk.kind];
         say("export.msg.done", {path, std::to_string(sc.triangleCount()), std::to_string(sc.meshes.size()), std::to_string(cnt["TREE"] + cnt["SHRUB"]),
                                 std::to_string(cnt["PERSON"]), std::to_string(cnt["CAR"]), std::format("{:.0f}", sun.azimuthDeg), std::format("{:.0f}", sun.elevationDeg)});
+        return true;
+    }
+    if (cmd == "FACADE") {   // fasad tizimi: IFC qavatlaridan yoki chizmadagi konturdan; 3D panellar, yoyilma, metraj
+        std::vector<std::string> flags;
+        const auto m = kv(a, 0, &flags);
+        bool elev = false;
+        for (const auto& f : flags) {
+            if (f == "ELEV") elev = true;
+            else throw usage();
+        }
+        bim::FacadeSpec sp;
+        if (auto it = m.find("TYPE"); it != m.end() && !bim::facadeTypeFromKey(it->second, sp.type)) throw usage();
+        if (sp.type == bim::FacadeType::Curtain) sp.spandrel = 0.6;
+        sp.module = num(m, "MODULE", sp.module);
+        sp.spandrel = num(m, "SPANDREL", sp.spandrel);
+        sp.offset = num(m, "OFFSET", sp.offset);
+        if (auto it = m.find("WIN"); it != m.end()) {
+            const auto x = utf8::toUpper(it->second).find('X');
+            if (x == std::string::npos) throw usage();
+            sp.winW = parseNumber(it->second.substr(0, x));
+            sp.winH = parseNumber(it->second.substr(x + 1));
+        }
+        sp.sill = num(m, "SILL", sp.sill);
+        std::vector<bim::FacadeFloor> floors;
+        if (auto it = m.find("IFC"); it != m.end()) {
+            bim::IfcModel im;
+            std::string err;
+            if (!bim::readIfc(it->second, im, err, false)) throw Error(err, {it->second});
+            floors = bim::facadeFloorsFromIfc(im);
+        } else {
+            const int n = static_cast<int>(num(m, "FLOORS", 0, true));
+            floors = bim::facadeFloorsFromDoc(doc_, m.count("LAYER") ? m.at("LAYER") : std::string(), n, num(m, "H", 3.3), num(m, "Z0", 0));
+        }
+        if (floors.empty()) throw Error("facade.err.nofloors", {});
+        const auto r = bim::buildFacade(floors, sp);
+        auto es = bim::facadeEntities(r);
+        if (elev) {
+            BBox bb = doc_.extents(false);
+            double x0 = 0, y0 = 0;
+            for (const auto& f : floors)
+                for (const auto& p : f.outline) { x0 = std::min(x0, p.x); y0 = std::min(y0, p.y); }
+            const Vec3 o{bb.valid() ? bb.min.x : x0, (bb.valid() ? bb.min.y : y0) - r.height - 20, 0};
+            for (auto& e : bim::facadeElevation(r, floors, o, 0.6)) es.push_back(std::move(e));
+        }
+        // oldingi fasad almashtiriladi
+        std::vector<EntityId> old;
+        for (EntityId id : doc_.ids())
+            if (const IEntity* e = doc_.find(id); e && e->layer().rfind("FASAD_", 0) == 0) old.push_back(id);
+        auto comp = std::make_unique<CompositeCommand>(cmd);
+        if (!old.empty()) comp->add(std::make_unique<DeleteCommand>(old));
+        std::set<std::string> made;
+        for (const auto& e : es)
+            if (!doc_.layer(e->layer()) && made.insert(e->layer()).second) comp->add(std::make_unique<SetLayerCommand>(Layer{e->layer()}));
+        std::vector<AddEntityCommand*> adds;
+        for (auto& e : es) {
+            auto c = std::make_unique<AddEntityCommand>(std::move(e), cmd);
+            adds.push_back(c.get());
+            comp->add(std::move(c));
+        }
+        stack_.execute(std::move(comp));
+        last_.clear();
+        for (auto* c : adds) last_.push_back(c->entityId());
+        say("facade.msg.done", {std::to_string(r.floors), std::format("{:.1f}", r.perimeter), std::format("{:.1f}", r.height), std::format("{:.1f}", r.glassArea),
+                                std::to_string(r.glassCount), std::format("{:.1f}", r.panelArea), std::to_string(r.panelCount), std::format("{:.1f}", r.mullionLen)});
+        if (auto it = m.find("XLSX"); it != m.end()) {
+            xlsx::Workbook wb;
+            auto& sh = wb.add(loc_.tr("facade.xl.sheet"));
+            sh.add({xlsx::Cell::s(loc_.tr("gp.xl.item"), 1), xlsx::Cell::s(loc_.tr("gp.xl.unit"), 1), xlsx::Cell::s(loc_.tr("gp.xl.qty"), 1)});
+            sh.add({xlsx::Cell::s(loc_.tr("facade.xl.glass")), xlsx::Cell::s("m²"), xlsx::Cell::n(r.glassArea)});
+            sh.add({xlsx::Cell::s(loc_.tr("facade.xl.glass_n")), xlsx::Cell::s(loc_.tr("gp.xl.pcs")), xlsx::Cell::n(r.glassCount, 5)});
+            sh.add({xlsx::Cell::s(loc_.tr("facade.xl.panel")), xlsx::Cell::s("m²"), xlsx::Cell::n(r.panelArea)});
+            sh.add({xlsx::Cell::s(loc_.tr("facade.xl.panel_n")), xlsx::Cell::s(loc_.tr("gp.xl.pcs")), xlsx::Cell::n(r.panelCount, 5)});
+            sh.add({xlsx::Cell::s(loc_.tr("facade.xl.profile")), xlsx::Cell::s("m"), xlsx::Cell::n(r.mullionLen)});
+            sh.widths = {40, 8, 14};
+            xlsx::save(wb, it->second);
+            say("dev.msg.saved", {it->second});
+        }
         return true;
     }
     if (cmd == "GENPLAN") {   // vaziyat rejasidan: bordyurlar, avtoturargoh joylari, metraj

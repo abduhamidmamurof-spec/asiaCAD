@@ -817,6 +817,15 @@ Normaga mos kelmagan elementlar 3D da qizil (xato) yoki sariq (ogohlantirish) bo
   kutubxonasidan real aktivlar qo'yish uchun); `_sahna.json` — quyosh azimuti va balandligi (Toshkent, sana/soat).
 - Menyu `Ko'rinish → Render → Renderga eksport (D5)`.
 
+## Fasad (v0.34)
+
+- **FACADE IFC=fayl.ifc | FLOORS=n [H=3.3] [Z0=0] [LAYER=…] [TYPE=CURTAIN|BAND|PUNCHED] [MODULE=1.5] [SPANDREL=m] [OFFSET=m]
+  [WIN=1.5x1.8] [SILL=0.9] [ELEV] [XLSX=f]** — qavatlar konturi IFC'dan (har qavat plitasi kesimi → rastr birlashma → tashqi kontur)
+  yoki chizmadagi yopiq polilindan (FASAD/KONTUR qatlami). Tizimlar: vitraj (shisha + spandrel), lentali, derazali devor; vertikal
+  profillar modul qadamida; 3D panellar `FASAD_SHISHA`, `FASAD_PANEL`, `FASAD_PROFIL` qatlamlarida (MeshEntity, renderga eksportda
+  materiallar: AC_Shisha, AC_Panel, AC_Alyuminiy); `ELEV` — fasad yoyilmasi (`FASAD_YOYILMA`); metraj — shisha/panel m², soni, profil m.
+- Menyu `Ko'rinish → Render → Fasad`.
+
 ## O'rnatish (Windows)
 
 Logotip, ochilish oynasi, `.exe` ikonkasi. Inno Setup o'rnatuvchisi (`apps/win/asiacad.iss`): Visual C++ runtime avtomatik,
