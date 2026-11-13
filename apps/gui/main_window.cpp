@@ -12,6 +12,7 @@
 #include "templates_dialog.h"
 #include "survey_dialog.h"
 #include "earthwork_dialog.h"
+#include "seismic_dialog.h"
 #include "model3d_view.h"
 #include "ifc_panel.h"
 #include "norm_rules_dialog.h"
@@ -160,6 +161,7 @@ const ActDef kActs[] = {
     {"ewtin", "terrain", "gui.act.ewtin", false},           {"ewprofile", "profile", "gui.act.ewprofile", false},
     {"ewsections", "sections", "gui.act.ewsections", false}, {"ewcarto", "cartogram", "gui.act.ewcarto", false},
     {"ewvolume", "volume", "gui.act.ewvolume", false},
+    {"seismic", "seismic", "gui.act.seismic", false}, {"geotech", "pile", "gui.act.geotech", false},
     {"view3d", "view3d", "gui.act.view3d", false},
     {"sheets", "sheet", "gui.act.sheets", false},
     // v0.31: Fayl / Ko'rinish / Tahlil varaqlari
@@ -718,6 +720,8 @@ void MainWindow::buildActions() {
     connect(act_["ewsections"], &QAction::triggered, this, [this] { openEarthwork(2); });
     connect(act_["ewcarto"], &QAction::triggered, this, [this] { openEarthwork(3); });
     connect(act_["ewvolume"], &QAction::triggered, this, [this] { openEarthwork(4); });
+    connect(act_["seismic"], &QAction::triggered, this, [this] { openSeismic(0); });
+    connect(act_["geotech"], &QAction::triggered, this, [this] { openSeismic(1); });
     connect(act_["drive"], &QAction::triggered, this, [this] { openDrive(); });
     // ---- Fayl → Loyiha, Ko'rinish, Tahlil
     connect(act_["projset"], &QAction::triggered, this, [this] { projectSettingsDialog(); });
@@ -923,7 +927,8 @@ void MainWindow::buildRibbon() {
                           {"gui.grp.sheets", {"sheets"}},
                           {"gui.grp.zoom", {"extents"}, {"zoomin", "zoomout", "grid"}},
                           {"gui.grp.panels", {}, {"pnlayers", "pnprops", "pncmd"}}}},
-        {"gui.tab.analyze", {{"gui.grp.volume", {"ewvolume"}},
+        {"gui.tab.analyze", {{"gui.grp.seismic", {"seismic", "geotech"}},
+                             {"gui.grp.volume", {"ewvolume"}},
                              {"gui.grp.check", {"dist", "area", "list"}},
                              {"gui.grp.norms", {"normcheck", "normrules"}},
                              {"gui.grp.reports", {"steelspec", "ifcpanel"}}}},
@@ -2777,6 +2782,17 @@ void MainWindow::makeSampleBuilding() {
     p.floorHeight = g.floorH;
     bd->setParams(p, bim::autoLayerMap(doc_));
     if (rebar_ && menuOpen(rebar_) && ownedHere(rebar_)) openRebar();
+}
+
+SeismicDialog* MainWindow::openSeismic(int tab) {
+    if (!seis_) {
+        seis_ = new SeismicDialog(loc_, this);
+        seis_->setStyleSheet(theme_.styleSheet);
+        connect(seis_, &SeismicDialog::commandReady, this, [this](const QString& line) { runLine(line); });
+    }
+    seis_->tabs()->setCurrentIndex(tab);
+    showMenu(seis_);
+    return seis_;
 }
 
 EarthworkDialog* MainWindow::openEarthwork(int tab) {

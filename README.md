@@ -771,3 +771,21 @@ Normaga mos kelmagan elementlar 3D da qizil (xato) yoki sariq (ogohlantirish) bo
   evakuatsiya eshigi (ShNK 2.01.02-04), xona balandligi (o'chirilgan).
 * Namuna: `tests/data/armatura_sinov.ifc` — 4 ta xato (ustun bo'ylama 16 < 25 mm, xomut 10 < 15 mm, xomut Ø6 < 6.25 mm,
   padbetonkasiz fundament 50 < 70 mm); dübel, plita to'ri va padbetonkali fundament — xatosiz.
+
+## Zilzila va grunt (v0.33)
+
+`Tahlil → Zilzila va grunt` menyusi va buyruqlar (formulalar — `bim/seismic.h`, `bim/geotech.h`):
+
+- **SEISMIC fayl.seis [I=6..12|PGA=g] [DIR=X|Y] [SWEEP] [XLSX=f]** — bino seysmik modeli (`.seis`, matn): modal tahlil
+  (Timoshenko konsol + rama prujinalari, Yakobi), maydon spektri bo'yicha CQC, QMQ 2.01.03-19 / MTSh 4.2.14 formulasi
+  (S = K0·Kп·Kэт·α·Q·W·Kδ·η), tekshiruvlar: perda kesish (har qavat), qavat qiyshayishi 1/100, plita chetining ko'tarilishi,
+  ag'darilish (zaxira 1,7), siljish; 6–12 ball sinovi (MSK-64: har ball — PGA ×2). Namuna: `examples/energetika_A_blok.seis`.
+- **PILECAP**, **BEARING**, **SETTLE**, **PIT** — qoziq (Qd = Qs/γRs + Qb/γRu, SP 24.13330), sayoz poydevor zamini (Vesić),
+  cho'kish (qatlamlab yig'ish, Bussinesk), PIT (L = c·t/2, sifat sinflari).
+- Menyu: ball surilgichi, ranglangan tekshiruvlar (ETABS uslubi), qavatlar bo'yicha perda ishlatilishi, 6–12 ball jadvali, Excel.
+
+## O'rnatish (Windows)
+
+Logotip, ochilish oynasi, `.exe` ikonkasi. Inno Setup o'rnatuvchisi (`apps/win/asiacad.iss`): Visual C++ runtime avtomatik,
+Start menyusi va ish stoli yorlig'i, `.acad` fayllari bog'lanishi. Dastur ochilmasa — `%TEMP%\asiacad.log`; oldingi ishga tushish
+oyna ochilmasdan tugagan bo'lsa, keyingisi dasturiy OpenGL bilan ochiladi.

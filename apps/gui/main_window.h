@@ -114,6 +114,7 @@ public:
     GeoPlaceDialog* openGeoPlace();
     SurveyDialog* openSurvey(int kind = -1);
     EarthworkDialog* openEarthwork(int tab = -1);
+    class SeismicDialog* openSeismic(int tab = 0);   // Zilzila va grunt (6–12 ball, qoziq, zamin, cho'kish, PIT)
     Model3DView* view3d() const { return view3d_; }
     void show3D(bool on);                  // asosiy oynada 2D chizma / 3D model
     bool is3D() const;
@@ -228,6 +229,7 @@ private:
     TemplatesDialog* tpl_ = nullptr;
     SurveyDialog* survey_ = nullptr;
     EarthworkDialog* earth_ = nullptr;
+    class SeismicDialog* seis_ = nullptr;
     GeoPlaceDialog* geoDlg_ = nullptr;
     std::function<void(const std::vector<Vec3>&)> pickCb_;   // oyna chizmadan nuqta kutmoqda
     DriveDialog* drive_ = nullptr;

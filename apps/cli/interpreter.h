@@ -52,6 +52,7 @@ private:
     // interpreter_pipes.cpp: aqlli obyektlar — SETPROP (har qanday obyekt xossasi), PIPEEDIT (kanalizatsiya quvuri/qudug'i)
     bool dispatchProps(const std::string& canon, const Args& a);
     bool dispatchAsBuilt(const std::string& canon, const Args& a);  // interpreter_asbuilt.cpp: ijro syomkasi vs loyiha
+    bool dispatchSeismic(const std::string& canon, const Args& a);  // interpreter_seismic.cpp: seysmik / geotexnik hisoblar
     // Modul modeli (util | road | ww) — lug'atga "<kind>:main", chizma xdata bilan; replace — eski chizma o'chiriladi
     std::size_t smartDraw(const std::string& kind, const std::string& json, std::vector<std::unique_ptr<IEntity>> es, const std::string& cmdName,
                           const std::string& profileAt, bool replace);

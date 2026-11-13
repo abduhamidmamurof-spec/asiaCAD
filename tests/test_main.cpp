@@ -2,6 +2,8 @@
 #include <asiacad/bim/building.h>
 #include <asiacad/bim/rebar.h>
 #include <asiacad/bim/rebar_import.h>
+#include <asiacad/bim/seismic.h>
+#include <asiacad/bim/geotech.h>
 #include <asiacad/bim/kj_project.h>
 #include <asiacad/bim/steel.h>
 #include <asiacad/bim/templates.h>
@@ -357,7 +359,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT" || c == "LAYON" || c == "LAYUNISO" || c == "DEVCLEAR");
     }
-    CHECK(loc.canonicalCommands().size() == 111);
+    CHECK(loc.canonicalCommands().size() == 116);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -4838,4 +4840,115 @@ TEST(rebar_prota_table) {
     CHECK(rowErr);
     CHECK(!tableErr);
     CHECK(R.schedule.size() == 2 && std::abs(R.totalMass - (75 * 0.888 + 50 * 2.466)) < 0.5);
+}
+
+// ---------- Zilzila va geotexnika (bim/seismic, bim/geotech) ----------
+TEST(seismic_section_modal_spectrum) {
+    namespace sz = bim::seismic;
+    // 2×4 to'g'ri to'rtburchak: Ix = b·h³/12 = 2·64/12, teshik bilan
+    const auto s = sz::polygonSection({{0, 0}, {2, 0}, {2, 4}, {0, 4}});
+    NEAR(s.A, 8.0);
+    NEAR(s.Ix, 2.0 * 64 / 12);
+    NEAR(s.Iy, 4.0 * 8 / 12);
+    const auto h = sz::polygonSection({{0, 0}, {2, 0}, {2, 4}, {0, 4}}, {{{0.5, 0.5}, {1.5, 0.5}, {1.5, 3.5}, {0.5, 3.5}}});
+    NEAR(h.A, 8.0 - 3.0);
+    // bir qavatli konsol: k = 3EI/L³, T = 2π√(m/k)
+    std::vector<sz::Story> one{{4.0, 100.0, 1.0e6, 0.0, 0.0}};
+    const auto m1 = sz::modalAnalysis(one, 1);
+    CHECK(m1.size() == 1);
+    NEAR(m1[0].T, 2 * std::numbers::pi * std::sqrt(100.0 / (3 * 1.0e6 / 64)));
+    NEAR(m1[0].gamma, 1.0);
+    // bir xil 10 qavat: Σ samarali massa = umumiy massa, eta (QMQ 2.6) tepada > 1
+    std::vector<sz::Story> ten(10, sz::Story{3.0, 50.0, 5.0e7, 0.0, 2.0e4});
+    const auto m10 = sz::modalAnalysis(ten, 10);
+    double sm = 0;
+    for (const auto& m : m10) sm += m.meff;
+    CHECK(std::abs(sm - 500.0) < 1e-3);
+    CHECK(m10[0].T > m10[1].T && m10[1].T > m10[2].T);
+    const auto eta = sz::etaCoefficients(ten, m10[0]);
+    CHECK(eta.back() > 1.0 && eta.front() < eta.back());
+    // maydon spektri (Seysmologiya instituti, 13-jadval)
+    const auto sp = sz::siteSpectrumLot16(5000);
+    NEAR(sp.sa(1.0), 0.357);
+    NEAR(sp.sa(0.0), 0.518);
+    CHECK(sp.sa(6.0) < sp.sa(3.0));
+    NEAR(sz::pgaForIntensity(0.518, 10), 1.036);
+    // Nyumark: tinch holat
+    const auto u = sz::newmarkSdof(1.0, 0.05, std::vector<double>(50, 0.0), 0.01);
+    NEAR(u.back(), 0.0);
+    // dinamik modullar (MTSh 4.2.13)
+    const double nu = sz::dynamicPoisson(1000, 500);
+    NEAR(nu, (1e6 - 2 * 2.5e5) / (2 * (1e6 - 2.5e5)));
+    NEAR(sz::dynamicModulus(2.0, 500, nu), 2 * 2.0 * 2.5e5 * (1 + nu));
+}
+TEST(seismic_building_model_energy_A) {
+    std::ifstream f(std::string(ASIACAD_EXAMPLES_DIR) + "/energetika_A_blok.seis");
+    std::stringstream ss;
+    ss << f.rdbuf();
+    const auto b = bim::seismic::readBuildingSeis(ss.str());
+    CHECK(b.stories.size() == 33);
+    CHECK(b.foot.size() >= 4);
+    // qayta yozish / o'qish
+    const auto b2 = bim::seismic::readBuildingSeis(bim::seismic::writeBuildingSeis(b));
+    CHECK(b2.stories.size() == 33);
+    // 9 ball — bardosh beradi, 10 ball — chegaradan oshadi (radye cheti ko'tariladi)
+    for (char d : {'x', 'y'}) {
+        const auto r9 = bim::seismic::evaluateSeismic(b, bim::seismic::pgaForIntensity(b.pga9, 9), d);
+        CHECK(r9.ok());
+        CHECK(r9.modes[0].T > 1.2 && r9.modes[0].T < 1.8);
+        const auto r10 = bim::seismic::evaluateSeismic(b, bim::seismic::pgaForIntensity(b.pga9, 10), d);
+        CHECK(!r10.ok());
+        CHECK(r10.checks.front().key == "uplift");
+    }
+    bool err = false;
+    try { bim::seismic::readBuildingSeis("S 1 2 3"); } catch (const std::exception&) { err = true; }
+    CHECK(err);
+}
+TEST(geotech_formulas) {
+    namespace gt = bim::geotech;
+    // Vesić, φ = 30°: Nq = 18.40, Nc = 30.14, Nγ = 22.40
+    gt::BearingInput bi;
+    bi.phiDeg = 30;
+    const auto b = gt::bearingCapacity(bi);
+    CHECK(std::abs(b.Nq - 18.40) < 0.01 && std::abs(b.Nc - 30.14) < 0.01 && std::abs(b.Ng - 22.40) < 0.01);
+    // Bussinesk: m = n = 1 → I = 0.1752; sirtda markaz ostida α = 1
+    CHECK(std::abs(gt::boussinesqCorner(1, 1, 1) - 0.1752) < 1e-4);
+    CHECK(std::abs(gt::boussinesqCenter(10, 10, 0.001) - 1.0) < 1e-3);
+    // qoziq: Qd = Qs/γRs + Qb/γRu
+    gt::PileInput pi;
+    pi.D = 1.0; pi.L = 10; pi.R = 1000; pi.fAvg = 50;
+    const auto pc = gt::pileCapacity(pi);
+    NEAR(pc.Qs, std::numbers::pi * 1.0 * 50 * 10);
+    NEAR(pc.Qb, 1000 * std::numbers::pi / 4);
+    NEAR(pc.Qd, pc.Qs / 1.5 + pc.Qb / 2.0);
+    // cho'kish: bir jinsli qatlam, kichik bosimda nolga yaqin, bosim oshsa ortadi
+    gt::SettlementInput si;
+    si.B = 10; si.L = 10; si.Df = 0; si.p = 200; si.layers = {{20, 20, 19}};
+    const auto s1 = gt::settlement(si);
+    si.p = 400;
+    const auto s2 = gt::settlement(si);
+    CHECK(s1.s > 0 && s2.s > s1.s && s1.Hc > 0);
+    // bikr plita: markaziy yuk — tekis bosim
+    const auto c = gt::raftContact({{0, 0}, {10, 0}, {10, 20}, {0, 20}}, 2000, 0, 0);
+    NEAR(c.qmin, 10.0);
+    NEAR(c.qmax, 10.0);
+    CHECK(!c.uplift);
+    CHECK(gt::raftContact({{0, 0}, {10, 0}, {10, 20}, {0, 20}}, 2000, 1e6, 0).uplift);
+    // PIT: L = c·t/2; 461-qoziq (11.07.2026 hisoboti) — 17,18 m, loyiha 25 m
+    const auto p = gt::pitCheck(4500, 0.0076356, 25);
+    CHECK(std::abs(p.L - 17.18) < 0.01 && p.flag && p.quality == 2);
+    CHECK(gt::pitCheck(2100, 0.00675, 7).quality == 0);
+    // suyuqlanish: rd(5 m) = 1 − 0.00765·5
+    const auto lq = gt::liquefaction({});
+    NEAR(lq.rd, 1 - 0.00765 * 5);
+}
+TEST(cli_seismic_geotech_commands) {
+    const auto f = std::string(ASIACAD_EXAMPLES_DIR) + "/energetika_A_blok.seis";
+    const auto s = runScript("tr", {"DEPREM \"" + f + "\" I=9 DIR=Y SWEEP", "KAZIK D=1 L=10 R=1000 F=50 LOAD=500", "PITTEST C=4500 T=0.0076356 L0=25"});
+    CHECK(s.find("9 şiddet (0.52 g): dayanır") != std::string::npos);
+    CHECK(s.find("10 şiddet (1.04 g): sınır aşılır") != std::string::npos);
+    CHECK(s.find("Kazık: çevre Qs = 1571 kN") != std::string::npos);
+    CHECK(s.find("UYGUNSUZ") != std::string::npos);
+    const auto u = runScript("uz", {"ZILZILA \"" + f + "\" I=12 DIR=X"});
+    CHECK(u.find("✗") != std::string::npos);
 }

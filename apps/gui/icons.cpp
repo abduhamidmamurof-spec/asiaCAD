@@ -31,6 +31,8 @@ void glyph(QPainter& p, const QString& n) {
     else if (n == "undo") { QPainterPath a; a.moveTo(9, 14); a.lineTo(4, 9); a.lineTo(9, 4); p.drawPath(a); QPainterPath b; b.moveTo(4, 9); b.lineTo(14, 9); b.cubicTo(18, 9, 20, 12, 20, 15); b.cubicTo(20, 18, 18, 20, 14, 20); b.lineTo(11, 20); p.drawPath(b); }
     else if (n == "redo") { QPainterPath a; a.moveTo(15, 14); a.lineTo(20, 9); a.lineTo(15, 4); p.drawPath(a); QPainterPath b; b.moveTo(20, 9); b.lineTo(10, 9); b.cubicTo(6, 9, 4, 12, 4, 15); b.cubicTo(4, 18, 6, 20, 10, 20); b.lineTo(13, 20); p.drawPath(b); }
     else if (n == "select") { P({{5, 3}, {5, 19}, {9.5, 15}, {12.5, 21}, {15, 20}, {12, 14}, {18, 14}}, true); }
+    else if (n == "seismic") { P({{8, 16}, {8, 4}, {16, 4}, {16, 16}}); L(8, 8, 16, 8); L(8, 12, 16, 12); P({{2, 20}, {6, 20}, {8, 17}, {10, 22}, {12, 17}, {14, 22}, {16, 18}, {18, 20}, {22, 20}}); }
+    else if (n == "pile") { R(3, 4, 18, 4, 0.5); L(6, 8, 6, 20); L(10, 8, 10, 18); L(14, 8, 14, 20); L(18, 8, 18, 17); }
     else if (n == "line") { L(5, 19, 19, 5); dot(5, 19); dot(19, 5); }
     else if (n == "pline") { P({{3, 18}, {9, 9}, {14, 14}, {21, 5}}); dot(3, 18); dot(9, 9); dot(14, 14); dot(21, 5); }
     else if (n == "circle") { C(12, 12, 8); dot(12, 12, 1.3); }

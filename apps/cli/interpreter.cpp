@@ -176,6 +176,11 @@ const char* commandSyntax(const std::string& c) {
         {"CARTOGRAM", "EG=sel FG=sel|Z=z|BALANCE [IX=‰] [IY=‰] [BASE=x,y] [CELL=20] [BOUND=id] [ORIGIN=x,y] [TH=h] [NODRAW] [XLSX=f]"},
         {"VOLUME", "EG=sel FG=sel|Z=z|BALANCE [IX=‰] [IY=‰] [BASE=x,y] [BOUND=id] [CELL=m]"},
         {"SETPROP", "sel KEY=value [KEY=value ...]"},
+        {"SEISMIC", "file.seis [I=6..12|PGA=g] [DIR=X|Y] [SWEEP] [XLSX=f]"},
+        {"PILECAP", "D=m L=m R=kPa F=kPa [GRS=1.5] [GRU=2] [LOAD=kN]"},
+        {"BEARING", "B=m [L=m] [DF=m] [C=kPa] [PHI=deg] [G=kN/m3] [FS=3]"},
+        {"SETTLE", "B=m [L=m] [DF=m] P=kPa LAYERS=h:E:g,..."},
+        {"PIT", "C=m/s T=s L0=m [TOL=m]"},
         {"ASBUILT", "net|ROAD|UTIL pts [REF=INV|TOP|AXIS] [TOL=cm] [TOLP=cm] [MAXD=m] [XLSX=f] [NODRAW]"},
         {"PIPEDRAW", "name p1 p2 [p…] [SYS=K1|K2] [SPEC=id] [SLOPE=‰] [DEPTH=m] [RIM=m]"},
         {"OBJEDIT", "UTIL LINE=n [DN=mm] [ZUP=m] [ZDOWN=m] [DEPTH=m] [KIND=k] | UTIL NODE=n [GROUND=m] [BOTTOM=m] [NAME=t] | ROAD ST=n DESIGN=m | WW ST=n BOTTOM=m"},
@@ -392,6 +397,7 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
     if (dispatchLinks(cmd, a)) return;
     if (dispatchProps(cmd, a)) return;
     if (dispatchAsBuilt(cmd, a)) return;
+    if (dispatchSeismic(cmd, a)) return;
     if (cmd == "LINE") {
         need(a, 2, cmd);
         std::vector<Vec3> pts;
