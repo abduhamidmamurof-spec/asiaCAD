@@ -123,4 +123,7 @@ std::vector<std::array<Vec3, 3>> ifcExtrude(const std::vector<Vec3>& outer, cons
 // STEP satridagi \X2\...\X0\, \X\hh, \S\c kodlarini UTF-8 ga
 std::string ifcDecodeString(const std::string& s);
 
+// Tekis ko'pburchak (teshiklar bilan, 3D) -> uchburchaklar; aylanish tashqi kontur bo'yicha
+std::vector<std::array<Vec3, 3>> triangulatePolygon(const std::vector<Vec3>& outer, const std::vector<std::vector<Vec3>>& holes);
+
 } // namespace asiacad::bim

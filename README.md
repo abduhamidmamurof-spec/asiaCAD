@@ -808,6 +808,15 @@ Normaga mos kelmagan elementlar 3D da qizil (xato) yoki sariq (ogohlantirish) bo
 - Menyu `Tarmoqlar → Genreja`: qatlamlar jadvali — har qatlam uchun hudud turi (inson tuzatishi → MAP), bordyur enlari,
   joy o'lchami, jonli ko'rinish.
 
+## Render uchun 3D sahna (v0.34)
+
+- **EXPORT3D fayl.gltf|fayl.obj [IFC=fayl.ifc] [BUILDING] [GENPLAN] [NOMARKERS] [DATE=2026-06-21] [TIME=16:00]** — D5 Render,
+  Lumion, Twinmotion, Unreal, 3ds Max uchun: glTF 2.0 (.gltf + .bin, PBR, Y yuqoriga) yoki OBJ + MTL; materiallar standart nomlar
+  bilan (AC_Beton, AC_Shisha, AC_Gazoblok, AC_Asfalt, AC_Plitka, AC_Chim …) — render dasturida bir marta moslanadi; IFC modeli,
+  chizmadagi bino (BINO) va genreja qoplamalari; `_markerlar.csv` — daraxt/buta/odam/avto joylari (render dasturining o'z
+  kutubxonasidan real aktivlar qo'yish uchun); `_sahna.json` — quyosh azimuti va balandligi (Toshkent, sana/soat).
+- Menyu `Ko'rinish → Render → Renderga eksport (D5)`.
+
 ## O'rnatish (Windows)
 
 Logotip, ochilish oynasi, `.exe` ikonkasi. Inno Setup o'rnatuvchisi (`apps/win/asiacad.iss`): Visual C++ runtime avtomatik,

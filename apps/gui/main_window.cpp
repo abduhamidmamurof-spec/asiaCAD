@@ -161,7 +161,7 @@ const ActDef kActs[] = {
     {"ewtin", "terrain", "gui.act.ewtin", false},           {"ewprofile", "profile", "gui.act.ewprofile", false},
     {"ewsections", "sections", "gui.act.ewsections", false}, {"ewcarto", "cartogram", "gui.act.ewcarto", false},
     {"ewvolume", "volume", "gui.act.ewvolume", false},
-    {"seismic", "seismic", "gui.act.seismic", false}, {"axes", "grid", "gui.act.axes", false}, {"genplan", "city", "gui.act.genplan", false}, {"geotech", "pile", "gui.act.geotech", false},
+    {"seismic", "seismic", "gui.act.seismic", false}, {"axes", "grid", "gui.act.axes", false}, {"genplan", "city", "gui.act.genplan", false}, {"export3d", "ptexport", "gui.act.export3d", false}, {"geotech", "pile", "gui.act.geotech", false},
     {"view3d", "view3d", "gui.act.view3d", false},
     {"sheets", "sheet", "gui.act.sheets", false},
     // v0.31: Fayl / Ko'rinish / Tahlil varaqlari
@@ -721,6 +721,14 @@ void MainWindow::buildActions() {
     connect(act_["ewcarto"], &QAction::triggered, this, [this] { openEarthwork(3); });
     connect(act_["ewvolume"], &QAction::triggered, this, [this] { openEarthwork(4); });
     connect(act_["seismic"], &QAction::triggered, this, [this] { openSeismic(0); });
+    connect(act_["export3d"], &QAction::triggered, this, [this] {
+        // render uchun sahna (D5 / Lumion / Twinmotion / Unreal / 3ds Max): yuklangan IFC + chizmadagi bino va genreja
+        QString f = QFileDialog::getSaveFileName(this, t("gui.act.export3d"), lastDir_ + "/sahna.gltf", "glTF (*.gltf);;Wavefront OBJ (*.obj)");
+        if (f.isEmpty()) return;
+        QString line = QString("EXPORT3D \"%1\"").arg(f);
+        if (!ifc_.empty() && !ifc_.front().path.isEmpty()) line += QString(" \"IFC=%1\"").arg(ifc_.front().path);
+        runLine(line);
+    });
     connect(act_["genplan"], &QAction::triggered, this, [this] {
         auto* d = new GenplanDialog(loc_, !theme_.lightCanvas, doc_, this);
         d->setAttribute(Qt::WA_DeleteOnClose);
@@ -943,6 +951,7 @@ void MainWindow::buildRibbon() {
                           {"gui.grp.camera", {"cam3d", "cut3d", "drive"}},
                           {"gui.grp.cats", {"cats3d"}},
                           {"gui.grp.sheets", {"sheets"}},
+                          {"gui.grp.render", {"export3d"}},
                           {"gui.grp.zoom", {"extents"}, {"zoomin", "zoomout", "grid"}},
                           {"gui.grp.panels", {}, {"pnlayers", "pnprops", "pncmd"}}}},
         {"gui.tab.analyze", {{"gui.grp.seismic", {"seismic", "geotech"}},

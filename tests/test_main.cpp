@@ -5,6 +5,7 @@
 #include <asiacad/bim/seismic.h>
 #include <asiacad/civil/axes.h>
 #include <asiacad/civil/genplan.h>
+#include <asiacad/bim/scene_export.h>
 #include <asiacad/bim/geotech.h>
 #include <asiacad/bim/kj_project.h>
 #include <asiacad/bim/steel.h>
@@ -361,7 +362,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT" || c == "LAYON" || c == "LAYUNISO" || c == "DEVCLEAR");
     }
-    CHECK(loc.canonicalCommands().size() == 118);
+    CHECK(loc.canonicalCommands().size() == 119);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -4883,6 +4884,33 @@ TEST(seismic_section_modal_spectrum) {
     NEAR(nu, (1e6 - 2 * 2.5e5) / (2 * (1e6 - 2.5e5)));
     NEAR(sz::dynamicModulus(2.0, 500, nu), 2 * 2.0 * 2.5e5 * (1 + nu));
 }
+TEST(scene_export_prism_gltf_obj_sun) {
+    using namespace bim;
+    Scene sc;
+    // teshikli plita 10×10, teshik 2×2, qalinligi 0.2: hajmi uchburchaklardan (divergensiya) = (100-4)*0.2
+    addPrism(sc, "AC_Beton", {{0, 0, 0}, {10, 0, 0}, {10, 10, 0}, {0, 10, 0}}, {{{4, 4, 0}, {6, 4, 0}, {6, 6, 0}, {4, 6, 0}}}, 0, 0.2);
+    double V = 0;
+    for (const auto& t : sc.meshes[0].tris) V += t[0].dot(t[1].cross(t[2])) / 6;
+    CHECK(std::abs(V - 96 * 0.2) < 1e-6);   // yopiq va tashqariga yo'nalgan
+    centerScene(sc);
+    CHECK(std::abs(sc.origin.x - 5) < 1e-9 && std::abs(sc.origin.z) < 1e-9);
+    const auto dir = std::filesystem::temp_directory_path() / "asiacad_scene_test";
+    std::filesystem::create_directories(dir);
+    writeGltf(sc, (dir / "t.gltf").string());
+    writeObj(sc, (dir / "t.obj").string());
+    CHECK(std::filesystem::file_size(dir / "t.bin") == sc.triangleCount() * 3 * 2 * 12);
+    std::ifstream g(dir / "t.gltf");
+    std::string gs((std::istreambuf_iterator<char>(g)), {});
+    CHECK(gs.find("\"AC_Beton\"") != std::string::npos && gs.find("\"version\":\"2.0\"") != std::string::npos);
+    CHECK(std::filesystem::exists(dir / "t.mtl"));
+    // Toshkent, 21 iyun 12:30 (UTC+5) — quyosh janubda, balandligi ~72°
+    const auto sp = sunPosition(41.31, 69.28, 2026, 6, 21, 12.6, 5.0);
+    CHECK(sp.elevationDeg > 68 && sp.elevationDeg < 74);
+    CHECK(sp.azimuthDeg > 150 && sp.azimuthDeg < 210);
+    const auto ev = sunPosition(41.31, 69.28, 2026, 12, 21, 16.5, 5.0);   // qishki kechki — g'arbda, past
+    CHECK(ev.azimuthDeg > 220 && ev.azimuthDeg < 260 && ev.elevationDeg < 12);
+}
+
 TEST(genplan_zones_curbs_parking) {
     using namespace civil;
     CHECK(gpClassifyLayer("VP-H-OZELENENIE", gpDefaultRules()) == GpZone::Green);

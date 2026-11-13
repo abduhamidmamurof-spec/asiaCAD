@@ -2549,4 +2549,11 @@ bool readIfc(const std::string& path, IfcModel& out, std::string& err, bool geor
     return parseIfc(text, out, err, georef);
 }
 
+// Ochiq yordamchi: tekis ko'pburchak (teshiklar bilan) -> uchburchaklar (eksport uchun)
+std::vector<std::array<Vec3, 3>> triangulatePolygon(const std::vector<Vec3>& outer, const std::vector<std::vector<Vec3>>& holes) {
+    std::vector<Tri> out;
+    triangulateFace(outer, holes, out);
+    return out;
+}
+
 } // namespace asiacad::bim

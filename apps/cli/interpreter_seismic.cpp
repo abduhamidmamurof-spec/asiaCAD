@@ -9,6 +9,9 @@
 #include <asiacad/bim/geotech.h>
 #include <asiacad/civil/axes.h>
 #include <asiacad/civil/genplan.h>
+#include <asiacad/bim/scene_export.h>
+#include <asiacad/bim/building.h>
+#include <filesystem>
 #include <asiacad/core/commands.h>
 #include <asiacad/bim/seismic.h>
 #include <asiacad/core/error.h>
@@ -16,6 +19,7 @@
 #include <asiacad/io/xlsx.h>
 
 #include <cmath>
+#include <cstdio>
 #include <format>
 #include <fstream>
 #include <map>
@@ -61,6 +65,130 @@ bool Interpreter::dispatchSeismic(const std::string& cmd, const Args& a) {
         for (double d : sp.radial ? sp.da : sp.dx) W += d;
         for (double d : sp.radial ? sp.dr : sp.dy) D += d;
         say(sp.radial ? "axes.msg.radial" : "axes.msg.done", {std::to_string(lines), std::format("{:g}", W), std::format("{:g}", D)});
+        return true;
+    }
+    if (cmd == "EXPORT3D") {   // render uchun sahna: OBJ/MTL yoki glTF + markerlar (daraxt/odam/avto) + quyosh/kamera
+        if (a.empty()) throw usage();
+        const std::string path = a[0];
+        std::vector<std::string> flags;
+        const auto m = kv(a, 1, &flags);
+        auto has = [&](const char* f) { return std::find(flags.begin(), flags.end(), f) != flags.end(); };
+        for (const auto& f : flags)
+            if (f != "BUILDING" && f != "GENPLAN" && f != "NOMARKERS") throw usage();
+        bim::Scene sc;
+        int parts = 0;
+        if (auto it = m.find("IFC"); it != m.end()) {
+            bim::IfcModel im;
+            std::string err;
+            if (!bim::readIfc(it->second, im, err, false)) throw Error(err, {it->second});
+            bim::addIfc(sc, im);
+            ++parts;
+        }
+        const bool wantBuilding = has("BUILDING") || (!m.count("IFC") && !has("GENPLAN"));
+        if (wantBuilding) {
+            bim::BuildingParams bp;
+            auto lm = bim::autoLayerMap(doc_);
+            if (const std::string pj = doc_.dictGet("bim:params"); !pj.empty()) bim::paramsFromJson(pj, bp, lm);
+            const auto plan = bim::readPlan(doc_, lm);
+            if (!plan.empty()) { bim::addBuilding(sc, bim::buildModel(plan, bp)); ++parts; }
+        }
+        // genreja: yer qoplamalari (yupqa qatlam) + markerlar
+        {
+            civil::GenplanSpec gs;
+            const auto zones = civil::gpExtractZones(doc_, gs);
+            if (!zones.empty() && (has("GENPLAN") || parts == 0 || true)) {
+                for (const auto& z : zones) {
+                    std::string mat;
+                    double t = 0.05;
+                    switch (z.zone) {
+                        case civil::GpZone::Road: case civil::GpZone::Parking: mat = "AC_Asfalt"; break;
+                        case civil::GpZone::Sidewalk: case civil::GpZone::Path: case civil::GpZone::Playground: case civil::GpZone::Ramp: mat = "AC_Plitka"; t = 0.10; break;
+                        case civil::GpZone::Green: mat = "AC_Chim"; t = 0.12; break;
+                        default: continue;
+                    }
+                    std::vector<Vec3> o;
+                    for (const auto& q : z.outer) o.push_back({q.x, q.y, 0});
+                    std::vector<std::vector<Vec3>> hs;
+                    for (const auto& h : z.holes) { hs.emplace_back(); for (const auto& q : h) hs.back().push_back({q.x, q.y, 0}); }
+                    bim::addPrism(sc, mat, o, hs, -t, 0);
+                }
+                ++parts;
+                if (!has("NOMARKERS")) {
+                    auto inZone = [](const civil::GpPoly& z, double x, double y) {
+                        auto in = [](const std::vector<civil::GpPoint>& r, double px, double py) {
+                            bool c = false;
+                            for (std::size_t i = 0, j = r.size() - 1; i < r.size(); j = i++)
+                                if ((r[i].y > py) != (r[j].y > py) && px < (r[j].x - r[i].x) * (py - r[i].y) / (r[j].y - r[i].y) + r[i].x) c = !c;
+                            return c;
+                        };
+                        if (!in(z.outer, x, y)) return false;
+                        for (const auto& h : z.holes) if (in(h, x, y)) return false;
+                        return true;
+                    };
+                    unsigned seed = 7;
+                    auto rnd = [&] { seed = seed * 1103515245u + 12345u; return (seed >> 8) / double(1u << 24); };
+                    for (const auto& z : zones) {
+                        double x0 = 1e300, y0 = 1e300, x1 = -1e300, y1 = -1e300;
+                        for (const auto& q : z.outer) { x0 = std::min(x0, q.x); y0 = std::min(y0, q.y); x1 = std::max(x1, q.x); y1 = std::max(y1, q.y); }
+                        const bool green = z.zone == civil::GpZone::Green, walk = z.zone == civil::GpZone::Sidewalk || z.zone == civil::GpZone::Path;
+                        if (!green && !walk) continue;
+                        const double step = green ? 8.0 : 14.0;
+                        for (double x = x0 + step / 2; x < x1; x += step)
+                            for (double y = y0 + step / 2; y < y1; y += step) {
+                                const double px = x + (rnd() - 0.5) * step * 0.5, py = y + (rnd() - 0.5) * step * 0.5;
+                                // chetdan 1,5 m ichkarida
+                                bool ok = inZone(z, px, py);
+                                for (double dx : {-1.5, 1.5}) ok = ok && inZone(z, px + dx, py) && inZone(z, px, py + dx);
+                                if (!ok) continue;
+                                if (green) sc.markers.push_back({rnd() < 0.7 ? "TREE" : "SHRUB", {px, py, 0}, 0, rnd() * 360});
+                                else if (rnd() < 0.5) sc.markers.push_back({"PERSON", {px, py, 0}, 1.75, rnd() * 360});
+                            }
+                    }
+                    for (auto& mk : sc.markers) if (mk.height == 0) mk.height = mk.kind == "TREE" ? 6 + rnd() * 6 : 1.2 + rnd();
+                    // avtoturargoh joylari (GP_AVTOTURARGOH) — har ikkinchisida avto
+                    int k = 0;
+                    for (EntityId id : doc_.ids())
+                        if (const auto* pl = dynamic_cast<const PolylineEntity*>(doc_.find(id)); pl && pl->layer() == "GP_AVTOTURARGOH" && pl->vertices().size() == 4)
+                            if (++k % 2) {
+                                const auto& v = pl->vertices();
+                                const Vec3 c{(v[0].x + v[2].x) / 2, (v[0].y + v[2].y) / 2, 0};
+                                const double ang = std::atan2(v[0].y - v[1].y, v[0].x - v[1].x) * 180 / 3.14159265358979;
+                                sc.markers.push_back({"CAR", c, 1.5, ang});
+                            }
+                }
+            }
+        }
+        if (sc.triangleCount() == 0) throw Error("export.err.empty", {});
+        bim::centerScene(sc);
+        const std::string ext = utf8::toUpper(std::filesystem::path(path).extension().string());
+        if (ext == ".OBJ") bim::writeObj(sc, path);
+        else bim::writeGltf(sc, path);
+        auto sib = [&](const std::string& suffix) {
+            auto p = std::filesystem::path(path);
+            return (p.parent_path() / (p.stem().string() + suffix)).string();
+        };
+        if (!sc.markers.empty()) bim::writeMarkersCsv(sc, sib("_markerlar.csv"));
+        // quyosh (Toshkent) va kamera
+        int Y = 2026, M = 6, D = 21;
+        double hour = 16.0;
+        if (auto it = m.find("DATE"); it != m.end() && std::sscanf(it->second.c_str(), "%d-%d-%d", &Y, &M, &D) != 3) throw usage();
+        if (auto it = m.find("TIME"); it != m.end()) {
+            int h = 0, mi = 0;
+            if (std::sscanf(it->second.c_str(), "%d:%d", &h, &mi) < 1) throw usage();
+            hour = h + mi / 60.0;
+        }
+        const auto sun = bim::sunPosition(41.31, 69.28, Y, M, D, hour, 5.0);
+        {
+            std::ofstream j(sib("_sahna.json"), std::ios::binary);
+            j << std::format("{{\"origin\":[{:.3f},{:.3f},{:.3f}],\"sun\":{{\"azimuth\":{:.2f},\"elevation\":{:.2f},\"date\":\"{:04d}-{:02d}-{:02d}\",\"time\":\"{:.2f}\","
+                             "\"place\":\"Toshkent 41.31N 69.28E UTC+5\"}},\"markers\":{},\"triangles\":{},\"up\":\"{}\"}}",
+                             sc.origin.x, sc.origin.y, sc.origin.z, sun.azimuthDeg, sun.elevationDeg, Y, M, D, hour, sc.markers.size(), sc.triangleCount(),
+                             ext == ".OBJ" ? "Z" : "Y");
+        }
+        std::map<std::string, int> cnt;
+        for (const auto& mk : sc.markers) ++cnt[mk.kind];
+        say("export.msg.done", {path, std::to_string(sc.triangleCount()), std::to_string(sc.meshes.size()), std::to_string(cnt["TREE"] + cnt["SHRUB"]),
+                                std::to_string(cnt["PERSON"]), std::to_string(cnt["CAR"]), std::format("{:.0f}", sun.azimuthDeg), std::format("{:.0f}", sun.elevationDeg)});
         return true;
     }
     if (cmd == "GENPLAN") {   // vaziyat rejasidan: bordyurlar, avtoturargoh joylari, metraj

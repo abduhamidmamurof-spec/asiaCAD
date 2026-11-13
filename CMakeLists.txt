@@ -66,6 +66,7 @@ add_library(asiacad_civil
   src/bim/norms.cpp
   src/bim/seismic.cpp
   src/bim/geotech.cpp
+  src/bim/scene_export.cpp
   src/civil/excel.cpp
   src/civil/utility.cpp
   src/civil/road.cpp
