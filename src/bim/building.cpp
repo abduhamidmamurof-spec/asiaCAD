@@ -534,6 +534,17 @@ PlanInput readPlan(const Document& doc, const std::map<std::string, ElemKind>& l
         for (const auto& sl : in.slabs) inSlab = inSlab || inside(sl, pt);
         if (inSlab) { in.slabT = v; break; }
     }
+    // ProtaStructure va boshqalar perdalarni ham ustun qatlamiga chizadi: tomonlar nisbati > 4 — devor (KJ dagidek)
+    std::erase_if(in.columns, [&](const std::vector<Vec3>& r) {
+        double x0 = 1e300, y0 = 1e300, x1 = -1e300, y1 = -1e300;
+        for (const auto& p : r) { x0 = std::min(x0, p.x); y0 = std::min(y0, p.y); x1 = std::max(x1, p.x); y1 = std::max(y1, p.y); }
+        const double a = std::min(x1 - x0, y1 - y0), b = std::max(x1 - x0, y1 - y0);
+        // qiya devor: kontur maydoni / tashqi to'rtburchak — kichik bo'lsa ham devor
+        const double fill = (x1 - x0) * (y1 - y0) > 0 ? std::abs(signedArea(r)) / ((x1 - x0) * (y1 - y0)) : 1;
+        if (a <= 0 || (b / a <= 4 && fill > 0.35)) return false;
+        in.walls.push_back(r);
+        return true;
+    });
     bool unitsKnown = false;
     // birlik: qolip planlari mm yoki sm da ($INSUNITS ko'pincha noto'g'ri); joriy chizma masshtablanmagan, varaqlar oldindan m ga
     // o'tkazilgan. Avval ustun/devor kesimining kichik tomoni medianasi bo'yicha (odatda 0.2–1.5 m): < 0.15 — sm (mm deb o'qilgan, ×10),
