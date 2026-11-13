@@ -1778,6 +1778,31 @@ TEST(bim_model_volumes) {
     const auto tbl = bim::drawPtoTable(m, {0, 0, 0}, 0.25, L);
     CHECK(tbl.size() > m.pto.size() * 6);
 }
+TEST(bim_plan_mm_units) {
+    // joriy chizma mm da (qolip DXF) — readPlan m ga o'tkazadi, hajmlar m dagi bilan bir xil
+    auto make = [](double s) {
+        Document doc;
+        auto add = [&](const char* layer, std::vector<Vec3> pts) {
+            for (auto& q : pts) q = q * s;
+            auto e = std::make_unique<PolylineEntity>(std::move(pts), true);
+            e->setLayer(layer);
+            doc.add(std::move(e));
+        };
+        add("KONTUR", {{0, 0, 0}, {12, 0, 0}, {12, 6, 0}, {0, 6, 0}});
+        for (double x : {0.0, 6.0, 12.0})
+            for (double y : {0.0, 6.0}) add("USTUN", {{x - 0.2, y - 0.2, 0}, {x + 0.2, y - 0.2, 0}, {x + 0.2, y + 0.2, 0}, {x - 0.2, y + 0.2, 0}});
+        return doc;
+    };
+    const Document dm = make(1.0), dmm = make(1000.0);
+    const auto pm = bim::readPlan(dm, bim::autoLayerMap(dm)), pmm = bim::readPlan(dmm, bim::autoLayerMap(dmm));
+    NEAR(pm.unitScale, 1.0);
+    NEAR(pmm.unitScale, 0.001);
+    bim::BuildingParams p;
+    p.floors = 2;
+    const auto a = bim::buildModel(pm, p), b = bim::buildModel(pmm, p);
+    CHECK(a.pto.size() == b.pto.size());
+    for (std::size_t i = 0; i < a.pto.size() && i < b.pto.size(); ++i) CHECK(std::abs(a.pto[i].volume - b.pto[i].volume) < 1e-6);
+}
 TEST(cli_building_command) {
     const auto s = runScript("ru", {"ПОЛИЛИНИЯ 0,0 6,0 6,6 0,6 ЗАМКНУТЬ", "ЗДАНИЕ 2 3"});
     CHECK(s.find("Ошибка") != std::string::npos || s.find("Предупреждение") != std::string::npos);  // слои не назначены

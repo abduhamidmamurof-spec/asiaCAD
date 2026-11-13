@@ -101,6 +101,7 @@ struct PlanInput {
     std::optional<double> levelTop;         // qolip chizmasidagi plita usti belgisi "+3.000"
     LevelSet levelSet;                      // tipik qavatlar: "+11.300...+23.400" (bo'sh — bitta belgi yoki yo'q)
     std::optional<double> zeroAbs;          // "±0,000 = 484,20 абс." — nisbiy nolning absolyut (Boltiq) belgisi
+    double unitScale = 1.0;                 // chizma birligi -> m (readPlan: plan > 2000 birlik — mm, 0.001)
     bool empty() const {
         return columns.empty() && walls.empty() && wallLines.empty() && slabs.empty() && foundations.empty() && strips.empty() && stairs.empty() &&
                shafts.empty() && infill.empty() && infillLines.empty();

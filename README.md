@@ -156,6 +156,9 @@ Notekis masshtabli blokdagi aylana/yoy — poliliniya (ogohlantirish bilan). Pap
 - PTO: tur × qavat bo'yicha soni, beton m³, qolip m²; beton sinflari bo'yicha jami. `BUILDING [n] [H] [t] [x,y]` —
   jadvalni chizmaga (qatlam PTO). GUI: "Tarmoqlar → Monolit bino" (Modul rejimida "BIM"): qatlam xaritasi, parametrlar,
   3D model (qavatlar bo'yicha ko'rsatish), PTO, tekshiruv. Namuna: `examples/bino_plan.acs`.
+- Birlik: joriy chizmadagi plan 2000 birlikdan katta bo'lsa — mm deb olinadi va m ga o'tkaziladi (`PlanInput::unitScale`).
+  Avval mm dagi qolip DXF (masalan `examples/bino_qolip/qavat_tipik.dxf`) m deb o'qilib, beton milliard m³ chiqardi,
+  armatura 3D esa xotira tugab qulardi.
 
 ## Armatura 3D (v0.12) — `src/bim/rebar.*`
 

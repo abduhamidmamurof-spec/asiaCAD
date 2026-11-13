@@ -515,6 +515,26 @@ PlanInput readPlan(const Document& doc, const std::map<std::string, ElemKind>& l
         for (const auto& sl : in.slabs) inSlab = inSlab || inside(sl, pt);
         if (inSlab) { in.slabT = v; break; }
     }
+    // birlik: qolip planlari ko'pincha mm da; joriy chizma masshtablanmagan — plan > 2000 birlik bo'lsa mm (varaqlar oldindan m ga o'tkazilgan)
+    {
+        double lo[2] = {1e300, 1e300}, hi[2] = {-1e300, -1e300};
+        auto ext = [&](const Vec3& p) {
+            lo[0] = std::min(lo[0], p.x); lo[1] = std::min(lo[1], p.y);
+            hi[0] = std::max(hi[0], p.x); hi[1] = std::max(hi[1], p.y);
+        };
+        auto rings = {&in.columns, &in.walls, &in.slabs, &in.openings, &in.outlines, &in.stairs, &in.shafts,
+                      &in.foundations, &in.strips, &in.leans, &in.infill};
+        auto segs = {&in.infillLines, &in.wallLines};
+        for (auto* v : rings) for (const auto& r : *v) for (const auto& p : r) ext(p);
+        for (auto* v : segs) for (const auto& [a, b] : *v) { ext(a); ext(b); }
+        const double span = std::max(hi[0] - lo[0], hi[1] - lo[1]);
+        if (span > 2000 && span < 1e12) {
+            in.unitScale = 0.001;
+            auto sc = [](Vec3& p) { p.x *= 0.001; p.y *= 0.001; p.z *= 0.001; };
+            for (auto* v : rings) for (auto& r : *v) for (auto& p : r) sc(p);
+            for (auto* v : segs) for (auto& [a, b] : *v) { sc(a); sc(b); }
+        }
+    }
     if (auto d = findDatum(doc)) in.zeroAbs = d->abs;
     // belgi: eng ko'p uchragan (teng bo'lsa — eng balandi)
     int best = 0;
