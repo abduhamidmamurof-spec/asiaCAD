@@ -204,13 +204,32 @@ bool kindFromKey(const std::string& s, ElemKind& out) {
     return false;
 }
 
+namespace {
+// Turkcha harflarni lotincha asosga: KİRİŞ -> KIRIS, DÖŞEME -> DOSEME (ProtaStructure "PM-..." qatlamlari)
+std::string foldTr(std::string s) {
+    static const std::pair<const char*, const char*> map[] = {
+        {"\xC4\xB0", "I"}, {"\xC4\xB1", "I"}, {"\xC5\x9E", "S"}, {"\xC5\x9F", "S"}, {"\xC3\x87", "C"}, {"\xC3\xA7", "C"},
+        {"\xC3\x96", "O"}, {"\xC3\xB6", "O"}, {"\xC3\x9C", "U"}, {"\xC3\xBC", "U"}, {"\xC4\x9E", "G"}, {"\xC4\x9F", "G"}};
+    for (const auto& [from, to] : map)
+        for (std::size_t p; (p = s.find(from)) != std::string::npos;) s.replace(p, std::strlen(from), to);
+    return s;
+}
+}  // namespace
+
 ElemKind guessKind(const std::string& layer) {
-    const std::string u = utf8::toUpper(layer);
+    const std::string u = foldTr(utf8::toUpper(layer));
     auto has = [&](std::initializer_list<const char*> keys) {
         for (const char* k : keys)
-            if (u.find(utf8::toUpper(k)) != std::string::npos) return true;
+            if (u.find(foldTr(utf8::toUpper(k))) != std::string::npos) return true;
         return false;
     };
+    // izoh qatlamlari (o'lcham, yozuv, o'q, belgi, shtrix, kesim ko'rinishi, ramka) — element emas
+    if (has({"ÖLÇÜ", "OLCU", "DIM", "РАЗМЕР", "YAZI", "TEXT", "ТЕКСТ", "NUMARA", "MARKA", "MARKER", "AKS", "KOT", "TARAMA", "HATCH",
+             "ШТРИХ", "KESİT", "KESIK", "GÖRÜNÜŞ", "ANTET", "PAFTA", "DEFPOINT", "HELP", "LEADER", "SİMGE", "DETAY", "DARALMA", "PARAPET",
+             "ÇELİK", "BOY", "YÖNÜ", "BASAMAK", "OK-", " OK"}))
+        return ElemKind::Ignore;
+    if (has({"REZERVASYON", "DELİK", "BOŞLUK"})) return ElemKind::Opening;
+    if (has({"KİRİŞ", "BEAM", "БАЛК", "РИГЕЛ"})) return ElemKind::Ignore;   // to'sinlar — alohida hisoblanmaydi (hali tur yo'q)
     if (has({"ZINA", "ЗИНА", "ЛЕСТН", "STAIR", "MERDIVEN", "БАСПАЛДАҚ", "ТЕПКИЧ"})) return ElemKind::Stair;
     if (has({"LIFT", "ЛИФТ", "SHAXTA", "ШАХТ", "ELEVATOR", "ASANSÖR", "ASANSOR"})) return ElemKind::Shaft;
     if (has({"PADBETON", "ПОДБЕТОН", "ПАДБЕТОН", "LEAN", "GROBETON", "ГРОБЕТОН", "TESVIYE"})) return ElemKind::Lean;
@@ -220,7 +239,7 @@ ElemKind guessKind(const std::string& layer) {
     if (has({"TOSIQ", "TO'SIQ", "ТЎСИҚ", "ТОСИК", "КЛАДК", "KLADKA", "ГАЗОБЛОК", "GAZOBLOK", "KIRPICH", "КИРПИЧ", "INFILL", "BRICK", "MASONRY",
              "ПЕРЕГОРОД", "TUĞLA", "GAZBETON", "ГАЗОБЕТОН"}))
         return ElemKind::Infill;
-    if (has({"DEVOR", "ДЕВОР", "СТЕН", "WALL", "DUVAR", "ҚАБЫРҒА", "ДУБАЛ", "ДИАФРАГМ"})) return ElemKind::Wall;
+    if (has({"DEVOR", "ДЕВОР", "СТЕН", "WALL", "DUVAR", "PERDE", "ҚАБЫРҒА", "ДУБАЛ", "ДИАФРАГМ"})) return ElemKind::Wall;
     if (has({"TOM", "КРОВЛ", "ПОКРЫТ", "ROOF", "ÇATI", "ЧАТЫР", "ШАТЫР"})) return ElemKind::Roof;
     if (has({"PLITA", "ПЛИТ", "SLAB", "DÖŞEME", "ПЕРЕКРЫТ", "ЁПМА", "YOPMA"})) return ElemKind::Slab;
     if (has({"TESHIK", "ТЕШИК", "ПРОЕМ", "ПРОЁМ", "ОТВЕРСТ", "OPENING", "BOŞLUK"})) return ElemKind::Opening;
@@ -515,8 +534,36 @@ PlanInput readPlan(const Document& doc, const std::map<std::string, ElemKind>& l
         for (const auto& sl : in.slabs) inSlab = inSlab || inside(sl, pt);
         if (inSlab) { in.slabT = v; break; }
     }
-    // birlik: qolip planlari ko'pincha mm da; joriy chizma masshtablanmagan — plan > 2000 birlik bo'lsa mm (varaqlar oldindan m ga o'tkazilgan)
+    bool unitsKnown = false;
+    // birlik: qolip planlari mm yoki sm da ($INSUNITS ko'pincha noto'g'ri); joriy chizma masshtablanmagan, varaqlar oldindan m ga
+    // o'tkazilgan. Avval ustun/devor kesimining kichik tomoni medianasi bo'yicha (odatda 0.2–1.5 m): < 0.15 — sm (mm deb o'qilgan, ×10),
+    // < 5 — m, < 150 — sm, aks holda mm;
+    // ustun yo'q bo'lsa — plan > 2000 birlik — mm.
     {
+        std::vector<double> sides;
+        for (const auto* v : {&in.columns, &in.walls})
+            for (const auto& r : *v) {
+                double x0 = 1e300, y0 = 1e300, x1 = -1e300, y1 = -1e300;
+                for (const auto& p : r) { x0 = std::min(x0, p.x); y0 = std::min(y0, p.y); x1 = std::max(x1, p.x); y1 = std::max(y1, p.y); }
+                if (const double s = std::min(x1 - x0, y1 - y0); s > 0) sides.push_back(s);
+            }
+        double sc = 0;
+        if (!sides.empty()) {
+            std::nth_element(sides.begin(), sides.begin() + sides.size() / 2, sides.end());
+            const double m = sides[sides.size() / 2];
+            sc = m < 0.15 ? 10.0 : m < 5 ? 1.0 : m < 150 ? 0.01 : 0.001;   // < 0.15 — sm fayl $INSUNITS=mm bo'yicha 0.001 bilan o'qilgan
+        }
+        if (sc > 0 && sc != 1) {
+            in.unitScale = sc;
+            auto scp = [sc](Vec3& p) { p.x *= sc; p.y *= sc; p.z *= sc; };
+            for (auto* v : {&in.columns, &in.walls, &in.slabs, &in.openings, &in.outlines, &in.stairs, &in.shafts, &in.foundations, &in.strips,
+                            &in.leans, &in.infill})
+                for (auto& r : *v) for (auto& p : r) scp(p);
+            for (auto* v : {&in.infillLines, &in.wallLines}) for (auto& [a, b] : *v) { scp(a); scp(b); }
+        }
+        unitsKnown = sc > 0;
+    }
+    if (!unitsKnown) {
         double lo[2] = {1e300, 1e300}, hi[2] = {-1e300, -1e300};
         auto ext = [&](const Vec3& p) {
             lo[0] = std::min(lo[0], p.x); lo[1] = std::min(lo[1], p.y);
@@ -533,6 +580,53 @@ PlanInput readPlan(const Document& doc, const std::map<std::string, ElemKind>& l
             auto sc = [](Vec3& p) { p.x *= 0.001; p.y *= 0.001; p.z *= 0.001; };
             for (auto* v : rings) for (auto& r : *v) for (auto& p : r) sc(p);
             for (auto* v : segs) for (auto& [a, b] : *v) { sc(a); sc(b); }
+        }
+    }
+    // bir varaqda bir nechta ko'rinish (asosiy plan + kesimlar, detallar): ustunlari eng ko'p guruh — asosiy plan,
+    // undan 3 m dan uzoqdagi elementlar tashlanadi (ustunlar orasidagi bo'shliq > 8 m — boshqa ko'rinish)
+    if (in.columns.size() + in.walls.size() >= 4) {
+        struct Box { double x0, y0, x1, y1; };
+        auto boxOf = [](const std::vector<Vec3>& r) {
+            Box b{1e300, 1e300, -1e300, -1e300};
+            for (const auto& p : r) { b.x0 = std::min(b.x0, p.x); b.y0 = std::min(b.y0, p.y); b.x1 = std::max(b.x1, p.x); b.y1 = std::max(b.y1, p.y); }
+            return b;
+        };
+        std::vector<Box> bx;
+        for (const auto* v : {&in.columns, &in.walls}) for (const auto& r : *v) bx.push_back(boxOf(r));
+        const double gap = 8.0;
+        std::vector<int> comp(bx.size(), -1);
+        int nc = 0;
+        for (std::size_t i = 0; i < bx.size(); ++i) {
+            if (comp[i] >= 0) continue;
+            std::vector<std::size_t> st{i};
+            comp[i] = nc;
+            while (!st.empty()) {
+                const auto a = st.back();
+                st.pop_back();
+                for (std::size_t j = 0; j < bx.size(); ++j) {
+                    if (comp[j] >= 0) continue;
+                    const double dx = std::max({0.0, bx[j].x0 - bx[a].x1, bx[a].x0 - bx[j].x1});
+                    const double dy = std::max({0.0, bx[j].y0 - bx[a].y1, bx[a].y0 - bx[j].y1});
+                    if (dx < gap && dy < gap) { comp[j] = nc; st.push_back(j); }
+                }
+            }
+            ++nc;
+        }
+        if (nc > 1) {
+            std::vector<int> cnt(nc, 0);
+            for (int c : comp) ++cnt[c];
+            const int best = static_cast<int>(std::max_element(cnt.begin(), cnt.end()) - cnt.begin());
+            Box k{1e300, 1e300, -1e300, -1e300};
+            for (std::size_t i = 0; i < bx.size(); ++i)
+                if (comp[i] == best) { k.x0 = std::min(k.x0, bx[i].x0); k.y0 = std::min(k.y0, bx[i].y0); k.x1 = std::max(k.x1, bx[i].x1); k.y1 = std::max(k.y1, bx[i].y1); }
+            k = {k.x0 - 3, k.y0 - 3, k.x1 + 3, k.y1 + 3};
+            auto inK = [&](const Vec3& p) { return p.x >= k.x0 && p.x <= k.x1 && p.y >= k.y0 && p.y <= k.y1; };
+            auto keepRing = [&](const std::vector<Vec3>& r) { return std::all_of(r.begin(), r.end(), inK); };
+            for (auto* v : {&in.columns, &in.walls, &in.slabs, &in.openings, &in.outlines, &in.stairs, &in.shafts, &in.foundations, &in.strips,
+                            &in.leans, &in.infill})
+                std::erase_if(*v, [&](const auto& r) { return !keepRing(r); });
+            for (auto* v : {&in.infillLines, &in.wallLines})
+                std::erase_if(*v, [&](const auto& s) { return !inK(s.first) || !inK(s.second); });
         }
     }
     if (auto d = findDatum(doc)) in.zeroAbs = d->abs;

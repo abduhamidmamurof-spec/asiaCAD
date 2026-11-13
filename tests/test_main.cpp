@@ -1793,15 +1793,30 @@ TEST(bim_plan_mm_units) {
             for (double y : {0.0, 6.0}) add("USTUN", {{x - 0.2, y - 0.2, 0}, {x + 0.2, y - 0.2, 0}, {x + 0.2, y + 0.2, 0}, {x - 0.2, y + 0.2, 0}});
         return doc;
     };
-    const Document dm = make(1.0), dmm = make(1000.0);
+    const Document dm = make(1.0), dmm = make(1000.0), dcm = make(100.0);
     const auto pm = bim::readPlan(dm, bim::autoLayerMap(dm)), pmm = bim::readPlan(dmm, bim::autoLayerMap(dmm));
+    const auto pcm = bim::readPlan(dcm, bim::autoLayerMap(dcm));   // ProtaStructure: sm, $INSUNITS esa mm
     NEAR(pm.unitScale, 1.0);
     NEAR(pmm.unitScale, 0.001);
+    NEAR(pcm.unitScale, 0.01);
+    // Turkcha (ProtaStructure) qatlamlari
+    CHECK(bim::guessKind("PM-KOLON") == bim::ElemKind::Column);
+    CHECK(bim::guessKind("PM-PERDE") == bim::ElemKind::Wall);
+    CHECK(bim::guessKind("PM-DÖŞEME") == bim::ElemKind::Slab);
+    CHECK(bim::guessKind("PM-REZERVASYON DÖŞEME") == bim::ElemKind::Opening);
+    CHECK(bim::guessKind("PM-KOLON DARALMASI") == bim::ElemKind::Ignore);
+    CHECK(bim::guessKind("PM-ÖLÇÜ KOLON") == bim::ElemKind::Ignore);
+    CHECK(bim::guessKind("PM-TARAMA KOLON") == bim::ElemKind::Ignore);
+    CHECK(bim::guessKind("PM-KİRİŞ") == bim::ElemKind::Ignore);
+    CHECK(bim::guessKind("PM-MERDİVEN BASAMAK") == bim::ElemKind::Ignore);
     bim::BuildingParams p;
     p.floors = 2;
     const auto a = bim::buildModel(pm, p), b = bim::buildModel(pmm, p);
     CHECK(a.pto.size() == b.pto.size());
     for (std::size_t i = 0; i < a.pto.size() && i < b.pto.size(); ++i) CHECK(std::abs(a.pto[i].volume - b.pto[i].volume) < 1e-6);
+    const auto c = bim::buildModel(pcm, p);
+    CHECK(c.pto.size() == a.pto.size());
+    for (std::size_t i = 0; i < a.pto.size() && i < c.pto.size(); ++i) CHECK(std::abs(a.pto[i].volume - c.pto[i].volume) < 1e-6);
 }
 TEST(cli_building_command) {
     const auto s = runScript("ru", {"ПОЛИЛИНИЯ 0,0 6,0 6,6 0,6 ЗАМКНУТЬ", "ЗДАНИЕ 2 3"});

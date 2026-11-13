@@ -159,6 +159,11 @@ Notekis masshtabli blokdagi aylana/yoy — poliliniya (ogohlantirish bilan). Pap
 - Birlik: joriy chizmadagi plan 2000 birlikdan katta bo'lsa — mm deb olinadi va m ga o'tkaziladi (`PlanInput::unitScale`).
   Avval mm dagi qolip DXF (masalan `examples/bino_qolip/qavat_tipik.dxf`) m deb o'qilib, beton milliard m³ chiqardi,
   armatura 3D esa xotira tugab qulardi.
+- Birlik ustun/devor kesimining kichik tomoni medianasidan aniqlanadi (0.2–1.5 m bo'lishi kerak): mm, sm yoki m —
+  ProtaStructure eksportlari sm da, $INSUNITS esa mm deydi. Varaqda bir nechta ko'rinish bo'lsa (plan + kesimlar) —
+  ustunlari eng ko'p guruh asosiy plan, qolgani tashlanadi.
+- Turkcha (ProtaStructure "PM-...") qatlamlari: PM-KOLON — ustun, PERDE — devor, PM-DÖŞEME — plita, REZERVASYON — teshik;
+  ÖLÇÜ, KOT, AKS, TARAMA, KESİT, ANTET, PAFTA, DARALMA, BASAMAK va h.k. — izoh, element emas. KİRİŞ (to'sin) — hali hisoblanmaydi.
 
 ## Armatura 3D (v0.12) — `src/bim/rebar.*`
 
