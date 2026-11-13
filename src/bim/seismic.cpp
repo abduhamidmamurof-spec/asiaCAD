@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <numbers>
 #include <sstream>
 #include <stdexcept>
@@ -434,6 +435,16 @@ BuildingSeis readBuildingSeis(const std::string& text) {
                 if (k == "FOOT") b.foot.push_back({a, v});
                 else b.spectrum.pts.emplace_back(a, v);
             }
+        } else if (k == "PLAN") {
+            int n;
+            if (!(ls >> n) || n < 1) throw bad();
+            if (b.plans.size() < static_cast<std::size_t>(n)) b.plans.resize(static_cast<std::size_t>(n));
+            std::string tok;
+            while (ls >> tok) {
+                const auto sep = tok.find(',');
+                if (sep == std::string::npos) throw bad();
+                b.plans[static_cast<std::size_t>(n - 1)].push_back({std::stod(tok.substr(0, sep)), std::stod(tok.substr(sep + 1))});
+            }
         } else if (k == "S") {
             int n;
             BuildingSeis::S s{};
@@ -455,11 +466,45 @@ std::string writeBuildingSeis(const BuildingSeis& b) {
     o << "\nFOOT";
     for (const auto& p : b.foot) o << ' ' << p.x << ',' << p.y;
     o << "\n";
+    for (std::size_t i = 0; i < b.plans.size(); ++i) {
+        if (b.plans[i].empty()) continue;
+        o << "PLAN " << i + 1;
+        for (const auto& p : b.plans[i]) o << ' ' << p.x << ',' << p.y;
+        o << "\n";
+    }
     int n = 0;
     for (const auto& s : b.stories)
         o << "S " << ++n << ' ' << s.h << ' ' << s.mass << ' ' << s.EIx << ' ' << s.EIy << ' ' << s.GAx << ' ' << s.GAy << ' ' << s.kFx << ' ' << s.kFy
           << ' ' << s.Acvx << ' ' << s.Acvy << ' ' << s.Acol << ' ' << s.fc << "\n";
     return o.str();
+}
+
+std::vector<double> syntheticAccelerogram(double pgaG, double dt, double duration, unsigned seed, double wg, double zg) {
+    const std::size_t n = static_cast<std::size_t>(std::max(1.0, duration / dt)) + 1;
+    std::vector<double> a(n, 0.0);
+    std::uint32_t st = seed * 2654435761u + 12345u;
+    auto rnd = [&] { st = st * 1664525u + 1013904223u; return (st >> 8) / double(1u << 24); };
+    const double w0 = 2 * std::numbers::pi * 0.15, w1 = 2 * std::numbers::pi * 25.0;
+    const int K = 240;
+    const double dw = (w1 - w0) / K;
+    for (int k = 0; k < K; ++k) {
+        const double w = w0 + (k + rnd()) * dw;
+        const double r = w / wg;
+        const double S = (1 + 4 * zg * zg * r * r) / ((1 - r * r) * (1 - r * r) + 4 * zg * zg * r * r);  // Kanai–Tajimi
+        const double hp = std::pow(w / (2 * std::numbers::pi * 0.4), 4);                                 // past chastota filtri
+        const double amp = std::sqrt(S * hp / (1 + hp) * dw), ph = 2 * std::numbers::pi * rnd();
+        for (std::size_t i = 0; i < n; ++i) a[i] += amp * std::cos(w * i * dt + ph);
+    }
+    double mx = 0;
+    for (std::size_t i = 0; i < n; ++i) {
+        const double t = i * dt;
+        const double env = t < 2.0 ? (t / 2.0) * (t / 2.0) : t < 9.0 ? 1.0 : std::exp(-0.35 * (t - 9.0));   // o'rov
+        a[i] *= env;
+        mx = std::max(mx, std::abs(a[i]));
+    }
+    const double k = mx > 0 ? pgaG * kG / mx : 0;
+    for (auto& v : a) v *= k;
+    return a;
 }
 
 double pgaForIntensity(double pga9, int I) { return pga9 * std::pow(2.0, I - 9); }

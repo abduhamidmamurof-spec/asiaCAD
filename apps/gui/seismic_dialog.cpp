@@ -1,6 +1,8 @@
 // AsiaCAD GUI — zilzila va grunt menyusi.
 #include "seismic_dialog.h"
 
+#include "shake_view.h"
+
 #include <asiacad/bim/geotech.h>
 
 #include <QComboBox>
@@ -24,6 +26,7 @@
 #include <QTableWidget>
 #include <QVBoxLayout>
 
+#include <array>
 #include <cmath>
 #include <sstream>
 
@@ -149,6 +152,74 @@ SeismicDialog::SeismicDialog(const i18n::Localizer& loc, QWidget* parent) : QDia
     g->setColumnStretch(1, 2);
     tabs_->addTab(pg, t("gui.seis.tab_build"));
 
+    // ---- 2: tebranish animatsiyasi
+    auto* sp = new QWidget;
+    auto* sl = new QVBoxLayout(sp);
+    auto* srow = new QHBoxLayout;
+    playBtn_ = new QPushButton(t("gui.shake.play"));
+    playBtn_->setStyleSheet("font-weight:600;padding:4px 14px");
+    auto* rst = new QPushButton(t("gui.shake.restart"));
+    auto* peak = new QPushButton(t("gui.shake.peak"));
+    auto* spd = new QComboBox;
+    for (const char* v : {"0.25×", "0.5×", "1×", "2×"}) spd->addItem(v);
+    spd->setCurrentIndex(2);
+    auto* ex = new QSlider(Qt::Horizontal);
+    ex->setRange(1, 200);
+    ex->setValue(60);
+    auto* exl = new QLabel("×60");
+    auto* agBtn = new QPushButton(t("gui.shake.loadag"));
+    agLbl_ = new QLabel(t("gui.shake.synth"));
+    agLbl_->setStyleSheet("color:gray");
+    srow->addWidget(playBtn_);
+    srow->addWidget(rst);
+    srow->addWidget(peak);
+    srow->addWidget(new QLabel(t("gui.shake.speed")));
+    srow->addWidget(spd);
+    srow->addWidget(new QLabel(t("gui.shake.exag")));
+    srow->addWidget(ex, 1);
+    srow->addWidget(exl);
+    srow->addWidget(agBtn);
+    sl->addLayout(srow);
+    sl->addWidget(agLbl_);
+    shake_ = new ShakeView;
+    const QStringList qa{"%1", "%2"};
+    shake_->labels = {t("gui.shake.l_time", qa), t("gui.shake.l_roof", qa), t("gui.shake.l_exag", qa), t("gui.shake.l_worst", qa), t("gui.shake.l_ag", qa),
+                      t("gui.shake.l_over")};
+    sl->addWidget(shake_, 1);
+    auto* snote = new QLabel(t("gui.shake.note"));
+    snote->setWordWrap(true);
+    snote->setStyleSheet("color:gray");
+    sl->addWidget(snote);
+    tabs_->addTab(sp, t("gui.shake.tab"));
+    connect(playBtn_, &QPushButton::clicked, this, [this] {
+        if (shake_->playing()) shake_->pause(); else shake_->play();
+        playBtn_->setText(t(shake_->playing() ? "gui.shake.pause" : "gui.shake.play"));
+    });
+    connect(rst, &QPushButton::clicked, this, [this] { shake_->restart(); });
+    connect(peak, &QPushButton::clicked, this, [this] {
+        shake_->pause();
+        playBtn_->setText(t("gui.shake.play"));
+        shake_->setTime(shake_->peakTime());
+    });
+    connect(spd, &QComboBox::currentIndexChanged, this, [this](int i) { shake_->setSpeed(std::array{0.25, 0.5, 1.0, 2.0}[static_cast<std::size_t>(std::clamp(i, 0, 3))]); });
+    connect(ex, &QSlider::valueChanged, this, [this, exl](int v) { shake_->setExaggeration(v); exl->setText(QString("×%1").arg(v)); });
+    connect(agBtn, &QPushButton::clicked, this, [this] {
+        const QString f = QFileDialog::getOpenFileName(this, t("gui.shake.loadag"), QFileInfo(path_).absolutePath(), "Accelerogram (*.txt *.dat *.csv);;* (*)");
+        if (f.isEmpty()) return;
+        if (loadAccelerogram(f, 0)) compute();
+    });
+    // bino sahifasidan: animatsiyani ko'rish tugmasi
+    auto* goShake = new QPushButton(t("gui.shake.open"));
+    goShake->setStyleSheet("font-weight:600");
+    crow->addWidget(goShake);
+    connect(goShake, &QPushButton::clicked, this, [this] {
+        tabs_->setCurrentIndex(1);
+        if (!shake_->playing()) { shake_->restart(); shake_->play(); playBtn_->setText(t("gui.shake.pause")); }
+    });
+    connect(tabs_, &QTabWidget::currentChanged, this, [this](int i) {
+        if (i != 1 && shake_->playing()) { shake_->pause(); playBtn_->setText(t("gui.shake.play")); }
+    });
+
     connect(browse, &QPushButton::clicked, this, [this] {
         const QString f = QFileDialog::getOpenFileName(this, t("gui.seis.model"), QFileInfo(path_).absolutePath(), "AsiaCAD seismic (*.seis)");
         if (!f.isEmpty() && loadModel(f)) compute();
@@ -269,6 +340,7 @@ void SeismicDialog::compute() {
     checks_->resizeColumnsToContents();
     bars_->v = r.wallRatio;
     bars_->update();
+    updateShake(r, d, I);
     // 6–12 ball jadvali
     QStringList keys;
     for (const auto& c : r.checks) keys << QString::fromStdString(c.key);
@@ -294,6 +366,36 @@ void SeismicDialog::compute() {
     }
     sweep_->resizeColumnsToContents();
     sweep_->horizontalHeader()->setStretchLastSection(true);
+}
+
+bool SeismicDialog::loadAccelerogram(const QString& path, int column) {
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly)) return false;
+    double dt = 0;
+    auto a = bim::seismic::readAccelerogram(f.readAll().toStdString(), column, &dt);
+    if (a.size() < 10 || dt <= 0) return false;
+    agFile_ = std::move(a);
+    agDt_ = dt;
+    agName_ = QFileInfo(path).fileName();
+    return true;
+}
+
+void SeismicDialog::updateShake(const bim::seismic::SeisResult& r, char d, int I) {
+    if (!shake_ || !model_) return;
+    std::vector<double> ag;
+    double dt = 0.01;
+    if (!agFile_.empty()) {   // fayldagi yozuv joriy PGA ga keltiriladi
+        double mx = 1e-12;
+        for (double v : agFile_) mx = std::max(mx, std::abs(v));
+        ag = agFile_;
+        for (auto& v : ag) v *= r.pga * 9.81 / mx;
+        dt = agDt_;
+        agLbl_->setText(t("gui.shake.file", {agName_}));
+    } else {
+        ag = bim::seismic::syntheticAccelerogram(r.pga, dt, 20.0);
+        agLbl_->setText(t("gui.shake.synth"));
+    }
+    shake_->setScene(*model_, r, d, I, ag, dt);
 }
 
 void SeismicDialog::computeGeo() {

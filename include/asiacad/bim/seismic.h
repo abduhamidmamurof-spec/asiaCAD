@@ -89,6 +89,10 @@ struct History {
 History timeHistory(const std::vector<Story>& st, const std::vector<Mode>& modes, const std::vector<double>& ag, double dt, double zeta = 0.05);
 // Akselerogramma matni: ustunlar "t a1 t a2 …" (sm/s²) — column (0 dan) bo'yicha m/s² ga; dt — birinchi ikki vaqtdan
 std::vector<double> readAccelerogram(const std::string& text, int column, double* dt = nullptr);
+// Sun'iy akselerogramma (m/s²): Kanai–Tajimi spektri (ωg, ζg) bo'yicha tasodifiy fazali sinusoidalar yig'indisi,
+// Saragoni–Hart tipidagi o'rov; eng katta qiymati pgaG·g ga keltiriladi. seed — takrorlanuvchi natija uchun.
+std::vector<double> syntheticAccelerogram(double pgaG, double dt = 0.01, double duration = 20.0, unsigned seed = 9,
+                                          double wg = 15.0, double zg = 0.6);
 
 // MTSh 4.2.13: ν = (Vp² − 2Vs²) / (2(Vp² − Vs²)),  E = 2ρVs²(1+ν)  (ρ t/m³, V m/s → kPa)
 double dynamicPoisson(double vp, double vs);
@@ -122,6 +126,7 @@ struct BuildingSeis {
     double pga9 = 0.518, Wfound = 0, phi = 35, R = 4.0, gn = 1.2, rhoH = 0.0025, fy = 400;
     Spectrum spectrum;
     std::vector<P2> foot;
+    std::vector<std::vector<P2>> plans;     // qavat rejasi konturi (PLAN n …); bo'sh — FOOT
     struct S { double h, mass, EIx, EIy, GAx, GAy, kFx, kFy, Acvx, Acvy, Acol, fc; };
     std::vector<S> stories;
     std::vector<Story> dir(char d) const;   // 'x' yoki 'y'

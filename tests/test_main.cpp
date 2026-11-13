@@ -4891,6 +4891,18 @@ TEST(seismic_building_model_energy_A) {
     // qayta yozish / o'qish
     const auto b2 = bim::seismic::readBuildingSeis(bim::seismic::writeBuildingSeis(b));
     CHECK(b2.stories.size() == 33);
+    // qavat rejalari (PLAN): bodrum keng, minora tor; qayta yozishda saqlanadi
+    CHECK(b.plans.size() == 33 && b.plans[0].size() >= 4 && b.plans[20].size() >= 4);
+    CHECK(b2.plans.size() == 33 && b2.plans[20].size() == b.plans[20].size());
+    CHECK(bim::seismic::polygonSection(b.plans[0]).A > bim::seismic::polygonSection(b.plans[20]).A);
+    // sun'iy akselerogramma: PGA aniq, takrorlanuvchi, o'rov oxirida so'nadi
+    const auto ag = bim::seismic::syntheticAccelerogram(0.518, 0.01, 20.0);
+    double mx = 0, tail = 0;
+    for (std::size_t i = 0; i < ag.size(); ++i) { mx = std::max(mx, std::abs(ag[i])); if (i > ag.size() * 9 / 10) tail = std::max(tail, std::abs(ag[i])); }
+    CHECK(ag.size() == 2001);
+    CHECK(std::abs(mx - 0.518 * 9.81) < 1e-6);
+    CHECK(tail < 0.25 * mx);
+    CHECK(bim::seismic::syntheticAccelerogram(0.518)[777] == ag[777]);
     // 9 ball — bardosh beradi, 10 ball — chegaradan oshadi (radye cheti ko'tariladi)
     for (char d : {'x', 'y'}) {
         const auto r9 = bim::seismic::evaluateSeismic(b, bim::seismic::pgaForIntensity(b.pga9, 9), d);

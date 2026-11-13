@@ -783,6 +783,11 @@ Normaga mos kelmagan elementlar 3D da qizil (xato) yoki sariq (ogohlantirish) bo
 - **PILECAP**, **BEARING**, **SETTLE**, **PIT** — qoziq (Qd = Qs/γRs + Qb/γRu, SP 24.13330), sayoz poydevor zamini (Vesić),
   cho'kish (qatlamlab yig'ish, Bussinesk), PIT (L = c·t/2, sifat sinflari).
 - Menyu: ball surilgichi, ranglangan tekshiruvlar (ETABS uslubi), qavatlar bo'yicha perda ishlatilishi, 6–12 ball jadvali, Excel.
+- **Bino tebranishi (animatsiya)** — `.seis` dagi qavat rejalari (`PLAN n x,y …`) dan yig'ilgan 3D bino vaqt tarixi bo'yicha
+  silkinadi (modal yig'indi, Newmark, 5% so'nish; tepa siljishi spektral natijaga keltiriladi). Yer harakati — maydon spektriga
+  mos sun'iy akselerogramma (`syntheticAccelerogram`: Kanai–Tajimi, Saragoni–Hart o'rovi) yoki fayldan yuklangan yozuv
+  (PGA ballga ko'ra masshtablanadi). Qavat rangi — shu ondagi perda kesish ishlatilishi, chegara oshsa qizil va "!" belgisi;
+  ijro / pauza / eng katta on, tezlik, kattalashtirish; pastda yer tezlanishi grafigi.
 
 ## O'rnatish (Windows)
 

@@ -17,6 +17,8 @@
 #include "draft_panels.h"
 #include "ifc_panel.h"
 #include "norm_rules_dialog.h"
+#include "seismic_dialog.h"
+#include "shake_view.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include "model3d_view.h"
@@ -1940,6 +1942,39 @@ int main(int argc, char** argv) {
         const int nd = tw.drawingCount();
         CHECK(tw.closeTabAt(tabs->currentIndex()) && tw.drawingCount() == nd - 1 && tw.activeDrawing() != e);
         CHECK(!tw.ribbon()->isHidden() || !tw.isStart());
+    }
+    {   // zilzila: tebranish animatsiyasi
+        std::printf("seismic shake view\n");
+        asiacad::gui::SeismicDialog sd(loc);
+        auto* sv = sd.shakeView();
+        CHECK(sv && sv->stories() == 33);
+        sd.tabs()->setCurrentIndex(1);
+        sd.resize(1300, 900);
+        sd.show();
+        QApplication::processEvents();
+        CHECK(sv->duration() > 15);
+        sv->setTime(sv->peakTime());
+        CHECK(std::abs(sv->roofNow()) > 0.05);   // 9 ball: tepa ~ 10–25 sm
+        auto redPixels = [&] {
+            const QImage im = sv->grab().toImage();
+            int red = 0;
+            for (int y = 0; y < im.height(); y += 2)
+                for (int x = 0; x < im.width(); x += 2) { const QColor c = im.pixelColor(x, y); if (c.red() > 200 && c.green() < 90 && c.blue() < 100) ++red; }
+            return red;
+        };
+        const char* shot = std::getenv("ASIACAD_SHAKE_SHOT");
+        if (shot) sd.grab().save(QString(shot) + "_9.png");
+        sd.setIntensity(12);
+        QApplication::processEvents();
+        sv->setTime(sv->peakTime());
+        double mx = 0;
+        for (int i = 0; i < sv->stories(); ++i) mx = std::max(mx, sv->ratioNow(i));
+        CHECK(mx >= 1.0);                        // 12 ball: chegara oshadi
+        CHECK(redPixels() > 50);
+        if (shot) sd.grab().save(QString(shot) + "_12.png");
+        sv->play();
+        CHECK(sv->playing());
+        sv->pause();
     }
     std::printf("\nGUI: %d tekshiruv, %d xato\n", checks, failures);
     return failures == 0 ? 0 : 1;
