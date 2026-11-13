@@ -2666,7 +2666,7 @@ void MainWindow::rebuild3D(bool keepView) {
         for (const auto& e : m.elements) total += e.triangleCount();
         const bool edges = total < 1500000;   // juda katta modelda qirralar o'chiriladi (tezlik)
         // ShNQ: element -> eng og'ir daraja va xabarlar
-        const bool normOn = L.norms && L.normColors;
+        bool normOn = L.norms && L.normColors;
         std::vector<int> worst;
         std::map<int, QStringList> normLines;
         std::map<int, const bim::NormViolation*> firstViol;
@@ -2683,6 +2683,8 @@ void MainWindow::rebuild3D(bool keepView) {
                 if (!firstViol.count(v.element)) firstViol[v.element] = &v;
             }
         }
+        // buzilish yo'q bo'lsa model xiralashtirilmaydi (oddiy ko'rinishda qoladi)
+        if (normOn && std::none_of(worst.begin(), worst.end(), [](int s) { return s > 0; })) normOn = false;
         int labels = 0;
         for (std::size_t ei = 0; ei < m.elements.size(); ++ei) {
             const auto& e = m.elements[ei];
