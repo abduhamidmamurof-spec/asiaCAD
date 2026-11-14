@@ -1,11 +1,13 @@
 #pragma once
 // AsiaCAD CLI — matnli buyruq interpretatori (AutoCAD command line uslubida).
 // Buyruq nomlari, kalit so'zlar va barcha xabarlar Localizer orqali (i18n/*.json).
+#include <asiacad/bim/building.h>
 #include <asiacad/civil/sewer.h>
 #include <asiacad/core/commands.h>
 #include <asiacad/core/dimension.h>
 #include <asiacad/i18n/localizer.h>
 
+#include <optional>
 #include <ostream>
 #include <string>
 #include <vector>
@@ -22,6 +24,9 @@ public:
     bool lastOk() const { return lastOk_; }   // oxirgi buyruq xatosiz bajarildimi
     const std::string& currentLayer() const { return layer_; }
     const std::string& currentFile() const { return currentFile_; }
+    // ARMODEL natijasi (GUI 3D ko'rinishi uchun); bo'sh — hali yaratilmagan
+    const std::optional<bim::BuildingModel>& lastArModel() const { return lastAr_; }
+    void clearArModel() { lastAr_.reset(); }
     // Bir nechta ochiq chizma (varaqlar): chizmaga tegishli holat (joriy qatlam, rang, LAST, fayl ...) almashtiriladi
     struct DocState {
         std::string layer = "0";
@@ -30,6 +35,7 @@ public:
         Vec3 lastPt;
         std::string currentFile;
         std::vector<Layer> isoSaved;
+        std::optional<bim::BuildingModel> arModel;
     };
     void swapDocState(DocState& s) {
         std::swap(layer_, s.layer);
@@ -38,6 +44,7 @@ public:
         std::swap(lastPt_, s.lastPt);
         std::swap(currentFile_, s.currentFile);
         std::swap(isoSaved_, s.isoSaved);
+        std::swap(lastAr_, s.arModel);
     }
 
 private:
@@ -83,6 +90,7 @@ private:
     std::ostream& out_;
     std::string layer_ = "0";
     int color_ = kColorByLayer;
+    std::optional<bim::BuildingModel> lastAr_;
     std::vector<EntityId> last_;  // oxirgi yaratilgan obyektlar (LAST tanlovi)
     mutable Vec3 lastPt_;         // @dx,dy nisbiy kiritish uchun
     std::string currentFile_;     // OPEN/SAVE qilingan .acad fayl

@@ -161,7 +161,7 @@ const ActDef kActs[] = {
     {"ewtin", "terrain", "gui.act.ewtin", false},           {"ewprofile", "profile", "gui.act.ewprofile", false},
     {"ewsections", "sections", "gui.act.ewsections", false}, {"ewcarto", "cartogram", "gui.act.ewcarto", false},
     {"ewvolume", "volume", "gui.act.ewvolume", false},
-    {"seismic", "seismic", "gui.act.seismic", false}, {"axes", "grid", "gui.act.axes", false}, {"genplan", "city", "gui.act.genplan", false}, {"export3d", "ptexport", "gui.act.export3d", false}, {"facade", "bim", "gui.act.facade", false}, {"geotech", "pile", "gui.act.geotech", false},
+    {"seismic", "seismic", "gui.act.seismic", false}, {"armodel", "bim", "gui.act.armodel", false}, {"axes", "grid", "gui.act.axes", false}, {"genplan", "city", "gui.act.genplan", false}, {"export3d", "ptexport", "gui.act.export3d", false}, {"facade", "bim", "gui.act.facade", false}, {"geotech", "pile", "gui.act.geotech", false},
     {"view3d", "view3d", "gui.act.view3d", false},
     {"sheets", "sheet", "gui.act.sheets", false},
     // v0.31: Fayl / Ko'rinish / Tahlil varaqlari
@@ -745,6 +745,16 @@ void MainWindow::buildActions() {
         }
         runLine(line);
     });
+    connect(act_["armodel"], &QAction::triggered, this, [this] {
+        // arxitektura rejalari + kesimdan 3D: fayl tanlanadi (bekor qilinsa — joriy chizma)
+        const QString f = QFileDialog::getOpenFileName(this, t("gui.act.armodel"), lastDir_, "DWG / DXF (*.dwg *.dxf);;* (*)");
+        if (f.isEmpty() && doc_.ids().empty()) return;
+        runLine(f.isEmpty() ? QStringLiteral("ARMODEL -") : QStringLiteral("ARMODEL \"%1\"").arg(f));
+        if (interp_->lastArModel()) {
+            show3D(true);
+            rebuild3D(false);
+        }
+    });
     connect(act_["genplan"], &QAction::triggered, this, [this] {
         auto* d = new GenplanDialog(loc_, !theme_.lightCanvas, doc_, this);
         d->setAttribute(Qt::WA_DeleteOnClose);
@@ -942,7 +952,6 @@ void MainWindow::buildRibbon() {
                           {"gui.grp.project", {"projset"}}}},
         {"gui.tab.draw", {{"gui.grp.draw", {"line", "pline", "circle", "arc"}, {"rect", "polygon", "ellipse", "spline", "point", "hatch"}, true},
                           {"gui.grp.textsym", {"text", "symbols"}},
-                          {"gui.grp.axes", {"axes"}},
                           {"gui.grp.modify", {"select"}, {"move", "copy", "stretch", "rotate", "mirror", "scale", "trim", "extend", "fillet",
                                                           "chamfer", "array", "offset", "erase", "explode", "join", "break", "matchprop"}},
                           {"gui.grp.layers", {}, {"layprops", "laymcur", "laymatch", "layoff", "layfrz", "laylck", "layulk", "layiso", "layuniso", "layon"}, true, 2}}},
@@ -956,18 +965,21 @@ void MainWindow::buildRibbon() {
                             {"gui.grp.geo", {"geoplace"}}}},
         {"gui.tab.networks", {{"gui.grp.water", {"sewer", "pipedraw", "waterway"}},
                               {"gui.grp.underground", {"util"}},
-                              {"gui.grp.roads", {"road", "corridor", "genplan"}}}},
+                              {"gui.grp.roads", {"road", "corridor"}}}},
         {"gui.tab.struct", {{"gui.grp.steelkm", {"steelframe", "steel"}},
                             {"gui.grp.elements", {"stairtpl", "ramptpl", "rwalltpl"}},
                             {"gui.grp.concrete", {"building", "rebar"}},
                             {"gui.grp.bim", {"ifcimport", "ifcpanel"}},
                             {"gui.grp.import", {"bimimport", "kjimport"}},
                             {"gui.grp.district", {"city"}}}},
+        {"gui.tab.arch", {{"gui.grp.arch3d", {"armodel"}},
+                          {"gui.grp.axes", {"axes"}},
+                          {"gui.grp.facadegen", {"facade", "genplan"}},
+                          {"gui.grp.render", {"export3d"}}}},
         {"gui.tab.view", {{"gui.grp.model", {"view2d", "view3d"}},
                           {"gui.grp.camera", {"cam3d", "cut3d", "drive"}},
                           {"gui.grp.cats", {"cats3d"}},
                           {"gui.grp.sheets", {"sheets"}},
-                          {"gui.grp.render", {"facade", "export3d"}},
                           {"gui.grp.zoom", {"extents"}, {"zoomin", "zoomout", "grid"}},
                           {"gui.grp.panels", {}, {"pnlayers", "pnprops", "pncmd"}}}},
         {"gui.tab.analyze", {{"gui.grp.seismic", {"seismic", "geotech"}},
@@ -2647,9 +2659,9 @@ void MainWindow::rebuild3D(bool keepView) {
             }
         }
     }
-    // bino modeli
-    if (building_ && ownedHere(building_) && !building_->model().prisms.empty()) {   // menyu modeli — faqat o'z chizmasida
-        for (const auto& pr : building_->model().prisms) {
+    // bino modeli (menyu modeli — faqat o'z chizmasida) va ARMODEL natijasi (arxitektura rejalaridan)
+    auto addBuilding = [&](const bim::BuildingModel& bm, bool menu) {
+        for (const auto& pr : bm.prisms) {
             std::vector<P3> o;
             for (const auto& q : pr.outline) o.push_back({q.x, q.y, 0});
             std::vector<std::vector<P3>> hs;
@@ -2670,12 +2682,12 @@ void MainWindow::rebuild3D(bool keepView) {
                                  {t("gui.v3d.p.volume", {QString::number(pr.volume(), 'f', 3)}),
                                   t("gui.v3d.p.levels", {QString::number(pr.z0, 'f', 3), QString::number(pr.z1, 'f', 3)}),
                                   t("gui.v3d.p.concrete", {QString::fromStdString(pr.concrete)})},
-                                 building_->prismSource(static_cast<int>(&pr - building_->model().prisms.data())) ? QStringLiteral("bim:%1").arg(&pr - building_->model().prisms.data())
-                                                                                                                  : QString());
+                                 menu && building_->prismSource(static_cast<int>(&pr - bm.prisms.data())) ? QStringLiteral("bim:%1").arg(&pr - bm.prisms.data())
+                                                                                                          : QString());
             view3d_->addPrism(o, hs, pr.z0, pr.z1, QColor(int(c >> 16), int((c >> 8) & 255), int(c & 255)));
             view3d_->endObject();
         }
-        for (const auto& g : building_->model().glass) {
+        for (const auto& g : bm.glass) {
             std::vector<P3> q;
             for (const auto& v : g.quad) q.push_back({v.x, v.y, v.z});
             const QString nm = t(g.door ? "gui.v3d.door" : "gui.v3d.window");
@@ -2683,7 +2695,9 @@ void MainWindow::rebuild3D(bool keepView) {
             view3d_->addFace(q, g.door ? QColor(70, 110, 150) : QColor(120, 170, 215), g.door ? 170 : 120, true);
             view3d_->endObject();
         }
-    }
+    };
+    if (building_ && ownedHere(building_) && !building_->model().prisms.empty()) addBuilding(building_->model(), true);
+    if (const auto& ar = interp_->lastArModel(); ar && !ar->prisms.empty()) addBuilding(*ar, false);
     // armatura
     if (rebar_ && ownedHere(rebar_) && !rebar_->model().bars.empty()) {
         std::size_t nseg = 0;

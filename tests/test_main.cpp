@@ -10,6 +10,7 @@
 #include <asiacad/bim/fem.h>
 #include <asiacad/bim/geotech.h>
 #include <asiacad/bim/kj_project.h>
+#include <asiacad/bim/ar_project.h>
 #include <asiacad/bim/steel.h>
 #include <asiacad/bim/templates.h>
 #include <asiacad/bim/ifc.h>
@@ -364,7 +365,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT" || c == "LAYON" || c == "LAYUNISO" || c == "DEVCLEAR");
     }
-    CHECK(loc.canonicalCommands().size() == 121);
+    CHECK(loc.canonicalCommands().size() == 122);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -2470,6 +2471,63 @@ TEST(excel_rebar_roundtrip) {
     CHECK(p2.floors == 7);
     CHECK(layers2["USTUN"] == bim::ElemKind::Column);
     NEAR(rs2.byKind[bim::ElemKind::Slab].s1, rs.byKind[bim::ElemKind::Slab].s1);
+}
+
+TEST(ar_title_and_floor_chain) {
+    int a = 0, b = 0;
+    CHECK(bim::classifyArTitle("План 1-го этажа на отм. ±0.000", a, b) == bim::ArViewKind::Plan && a == 1 && b == 1);
+    CHECK(bim::classifyArTitle("План типового этажа (2-9) на отм. +3.300...+26.400", a, b) == bim::ArViewKind::Plan && a == 2 && b == 9);
+    CHECK(bim::classifyArTitle("3-qavat rejasi", a, b) == bim::ArViewKind::Plan && a == 3 && b == 3);
+    CHECK(bim::classifyArTitle("2-5 qavatlar rejasi", a, b) == bim::ArViewKind::Plan && a == 2 && b == 5);
+    CHECK(bim::classifyArTitle("Ground floor plan", a, b) == bim::ArViewKind::Plan && a == 1);
+    CHECK(bim::classifyArTitle("Разрез 1-1", a, b) == bim::ArViewKind::Section);
+    CHECK(bim::classifyArTitle("Фасад 1-4", a, b) == bim::ArViewKind::Facade);
+    CHECK(bim::classifyArTitle("План кровли", a, b) == bim::ArViewKind::Roof);
+    CHECK(bim::classifyArTitle("План подвала", a, b) == bim::ArViewKind::Basement);
+    CHECK(bim::classifyArTitle("Генплан", a, b) == bim::ArViewKind::Other);
+    double h = 0;
+    int n = 0;
+    CHECK(bim::floorChain({-0.45, 0, 3.3, 6.6, 9.9, 13.2, 16.5, 17.4}, h, n) && n == 5);
+    NEAR(h, 3.3);
+    CHECK(bim::floorChain({0, 4.2, 7.5, 10.8}, h, n) && n == 1);   // 1-qavat 4.2 boshqa qadam — zanjir 3.3 bilan uzilmaydi
+    CHECK(!bim::floorChain({1.2, 2.0}, h, n));
+}
+
+TEST(ar_project_from_plans_and_section) {
+    // bitta faylda: 1-qavat rejasi, tipik reja (2-5), tom rejasi, kesim (belgilar ±0.000 … +16.500)
+    civil::SheetFile f;
+    f.path = std::string(ASIACAD_EXAMPLES_DIR) + "/ar_loyiha/ar_loyiha.dxf";
+    f.keepBlocks = true;
+    const auto ls = civil::loadSheet(f);
+    CHECK(ls.error.empty());
+    const auto r = bim::buildArProject(*ls.doc, ls.dims, bim::ArParams{});
+    int plans = 0, sections = 0, roofs = 0;
+    for (const auto& v : r.views) {
+        plans += v.kind == bim::ArViewKind::Plan;
+        sections += v.kind == bim::ArViewKind::Section;
+        roofs += v.kind == bim::ArViewKind::Roof;
+        if (v.kind == bim::ArViewKind::Plan) {
+            CHECK(v.aligned);
+            CHECK(v.columns == 12);          // 4 × 3 o'q kesishmasi
+            CHECK(v.infill >= 4);
+            CHECK(v.windows == 12);          // ОК-1 bloklari
+        }
+    }
+    CHECK(plans == 2 && sections == 1 && roofs == 1);
+    CHECK(r.heightFromSection);
+    CHECK(r.floors == 5);
+    NEAR(r.floorHeight, 3.3);
+    NEAR(r.bm.heightTop, 16.5);
+    CHECK(r.doorsByFloor.at(1) == 1 && r.doorsByFloor.at(3) == 0);
+    CHECK(r.bm.windows == 60 && r.bm.doors == 1);   // derazalar bloklar joyida (5 qavat × 12), eshik 1-qavatda
+    int cols5 = 0;
+    for (const auto& pr : r.bm.prisms) cols5 += pr.kind == bim::ElemKind::Column && pr.level == 5;
+    CHECK(cols5 == 12);
+    // deraza oynasi devor o'qida (y = 0 yoki 12 m) va 1-qavatda tokcha balandligida
+    bool sill = false;
+    for (const auto& g : r.bm.glass)
+        if (g.level == 1 && !g.door && std::abs(g.quad[0].y) < 0.2) sill = sill || std::abs(g.quad[0].z - 0.9) < 1e-6;
+    CHECK(sill);
 }
 
 TEST(kj_single_file_project) {

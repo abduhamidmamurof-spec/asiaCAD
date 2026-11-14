@@ -193,7 +193,7 @@ int main(int argc, char** argv) {
         QStringList pages;
         for (int i = 0; i < rb->count(); ++i) pages << rb->widget(i)->property("i18n").toString();
         CHECK(pages == QStringList({"gui.tab.file", "gui.tab.draw", "gui.tab.annot", "gui.tab.survey", "gui.tab.networks",
-                                    "gui.tab.struct", "gui.tab.view", "gui.tab.analyze"}));
+                                    "gui.tab.struct", "gui.tab.arch", "gui.tab.view", "gui.tab.analyze"}));
         auto act_key = [](QAction* a) { return a->objectName().mid(4); };   // "act_kjimport" -> "kjimport"
         QHash<QAction*, int> uses;
         for (auto* b : rb->findChildren<QToolButton*>())

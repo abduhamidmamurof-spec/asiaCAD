@@ -793,7 +793,8 @@ QWidget* MainWindow::buildStartPage() {
         auto* grid = new QGridLayout;
         grid->setSpacing(6);
         int i = 0;
-        for (const char* k : {"building", "rebar", "sewer", "util", "road", "waterway", "corridor", "city", "steelframe", "devplan", "ewvolume", "ifcimport"}) {
+        for (const char* k : {"armodel", "building", "rebar", "axes", "genplan", "facade", "export3d", "seismic", "sewer", "util", "road", "waterway", "corridor", "city",
+                              "steelframe", "devplan", "ewvolume", "ifcimport"}) {
             auto* b = new QToolButton(f);
             b->setDefaultAction(act_[k]);
             b->setObjectName("startMenu");

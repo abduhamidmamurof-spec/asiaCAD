@@ -21,6 +21,7 @@ struct SheetFile {
     double scale = 0;            // 0 — avto ($INSUNITS yoki o'lcham bo'yicha), 0.001 — mm, 1 — m
     double dx = 0, dy = 0;       // metrda, masshtabdan keyin
     bool enabled = true;
+    bool keepBlocks = false;     // true — bloklar (INSERT) saqlanadi: deraza/eshik bloklari nomi bilan sanaladi (ARMODEL)
 };
 
 struct LoadedSheet {

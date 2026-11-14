@@ -2,6 +2,7 @@
 
 #include <asiacad/bim/building.h>
 #include <asiacad/bim/kj_project.h>
+#include <asiacad/bim/ar_project.h>
 #include <asiacad/bim/ifc.h>
 #include <asiacad/bim/norms.h>
 #include <asiacad/civil/drawset.h>
@@ -122,6 +123,7 @@ const char* commandSyntax(const std::string& c) {
         {"EXCEL", "SEWER|BUILDING|REBAR|UTIL|ROAD|WATERWAY|CORRIDOR in out"},
         {"UTIL", "[file.json] [+]"},
         {"KJ", "file.dxf [fTop|-] [fT] [abs±0.000]"},
+        {"ARMODEL", "file.dxf|- [floors] [H]"},
         {"IFCIMPORT", "file.ifc [{LOCAL}]"},
         {"SHNQ", "file.ifc [rules.json] | {RULES} out.json"},
         {"ROAD", "[file.json] [+] [x,y]"},
@@ -860,6 +862,53 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
             const std::string ref = r.norm + (r.clause.empty() ? std::string() : ", " + r.clause) + (r.verified ? std::string() : " · " + loc_.tr("norm.unverified"));
             say("norm.msg.item", {loc_.tr(v.severity >= 2 ? "sewer.lvl.error" : "sewer.lvl.warning"), name, r.titleFor(lang), bim::normFormat(v.value, r.unit),
                                   v.belowMin ? "<" : ">", bim::normFormat(v.limit, r.unit), ref});
+        }
+    } else if (cmd == "ARMODEL") {
+        // ARMODEL fayl.dxf|- [qavatlar] [qavat balandligi] — arxitektura rejalari + kesimdan 3D bino
+        need(a, 1, cmd);
+        std::optional<civil::LoadedSheet> ls;
+        const Document* src = &doc_;
+        std::vector<DxfDimInfo> dims;
+        if (a[0] != "-") {
+            civil::SheetFile sf;
+            sf.path = a[0];
+            sf.keepBlocks = true;
+            ls = civil::loadSheet(sf);
+            if (!ls->error.empty()) throw Error("acad.err.open", {a[0]});
+            src = ls->doc.get();
+            dims = ls->dims;
+        }
+        bim::ArParams ap;
+        if (const std::string pj = doc_.dictGet("bim:params"); !pj.empty()) {
+            std::map<std::string, bim::ElemKind> lm;
+            try { bim::paramsFromJson(pj, ap.building, lm); } catch (const Error&) {}
+        }
+        if (a.size() > 1) ap.floors = static_cast<int>(parseNumber(a[1]));
+        if (a.size() > 2) ap.floorHeight = parseNumber(a[2]);
+        const auto r = bim::buildArProject(*src, dims, ap);
+        int np = 0, ns = 0;
+        for (const auto& v : r.views) {
+            np += v.kind == bim::ArViewKind::Plan;
+            ns += v.kind == bim::ArViewKind::Section || v.kind == bim::ArViewKind::Facade;
+        }
+        say("ar.msg.views", {std::to_string(r.views.size()), std::to_string(np), std::to_string(ns)});
+        for (const auto& v : r.views) {
+            if (v.kind == bim::ArViewKind::Other && v.title.empty()) continue;
+            const std::string fl = v.kind != bim::ArViewKind::Plan ? "-" : v.floorFrom == 0 ? "?" : v.floorFrom == v.floorTo ? std::to_string(v.floorFrom)
+                                                                                                 : std::format("{}-{}", v.floorFrom, v.floorTo);
+            say("ar.msg.view", {loc_.tr(std::string("ar.view.") + bim::arViewKey(v.kind)), v.title, fl, std::to_string(v.walls), std::to_string(v.columns),
+                                std::to_string(v.infill), std::to_string(v.windows), std::to_string(v.doors)});
+        }
+        say("ar.msg.height", {std::to_string(r.floors), std::format("{:.3f}", r.floorHeight),
+                              loc_.tr(r.heightFromSection && ap.floorHeight <= 0 ? "ar.msg.src_section" : "ar.msg.src_default")});
+        for (const auto& is : r.issues)
+            out_ << "  " << loc_.tr(is.error ? "sewer.lvl.error" : is.info ? "sewer.lvl.info" : "sewer.lvl.warning") << ": " << loc_.tr(is.key, is.args) << '\n';
+        if (r.floors > 0 && !r.bm.prisms.empty()) {
+            for (const auto& is : r.bm.issues)
+                out_ << "  " << loc_.tr(is.error ? "sewer.lvl.error" : is.info ? "sewer.lvl.info" : "sewer.lvl.warning") << ": " << loc_.tr(is.key, is.args) << '\n';
+            say("ar.msg.total", {std::format("{:.1f}", r.bm.totalVolume), std::format("{:.1f}", r.bm.masonry), std::format("{:.1f}", r.bm.glazing),
+                                 std::to_string(r.bm.windows), std::to_string(r.bm.doors), std::format("{:+.3f}", r.bm.heightTop)});
+            lastAr_ = r.bm;
         }
     } else if (cmd == "KJ") {
         // KJ fayl.dxf [fundament usti] [qalinligi] — bitta KJ fayldan (qolip + armatura) beton va armatura

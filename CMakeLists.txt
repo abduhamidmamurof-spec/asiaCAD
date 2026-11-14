@@ -63,6 +63,7 @@ add_library(asiacad_civil
   src/bim/rebar.cpp
   src/bim/rebar_import.cpp
   src/bim/kj_project.cpp
+  src/bim/ar_project.cpp
   src/bim/steel.cpp
   src/bim/templates.cpp
   src/bim/ifc.cpp

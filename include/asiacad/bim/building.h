@@ -90,6 +90,14 @@ LevelSet parseLevelSet(const std::string& text);
 // manbalardan qavat balandligi (qo'shni varaqlar belgilari): oraliqqa eng mos (qoldig'i kichik) qadam tanlanadi.
 std::vector<double> expandLevelSet(const LevelSet& s, double floorHeight, const std::vector<double>& hints = {});
 
+// Rejadagi deraza / eshik bloki (ARMODEL: "ОК-1", "ДВ-2" …): markazi va eni (m). Berilsa — fasad derazalari avtomatik
+// qadam bilan emas, shu joylarda (to'siq devorga proyeksiya) qo'yiladi
+struct OpeningMark {
+    Vec3 c;
+    double w = 0;
+    bool door = false;
+};
+
 struct PlanInput {
     std::vector<std::vector<Vec3>> columns, walls, slabs, openings, outlines;
     std::vector<std::vector<Vec3>> stairs, shafts;  // zinapoya kataklari, lift shaxtalari (ichki kontur)
@@ -97,6 +105,7 @@ struct PlanInput {
     std::vector<std::vector<Vec3>> infill;                       // to'siq devorlar (kontur)
     std::vector<std::pair<Vec3, Vec3>> infillLines;              // to'siq devor markaz chiziqlari (infillT bilan)
     std::vector<std::pair<Vec3, Vec3>> wallLines;  // markaz chiziqlari (wallT bilan)
+    std::vector<OpeningMark> marks;         // deraza / eshik bloklari (bo'sh — avtomatik qadam)
     double slabT = 0;                       // qolip chizmasidagi "h=200" / "δ=200" (0 — parametrdan)
     std::optional<double> levelTop;         // qolip chizmasidagi plita usti belgisi "+3.000"
     LevelSet levelSet;                      // tipik qavatlar: "+11.300...+23.400" (bo'sh — bitta belgi yoki yo'q)

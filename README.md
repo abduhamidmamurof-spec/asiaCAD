@@ -836,6 +836,21 @@ Normaga mos kelmagan elementlar 3D da qizil (xato) yoki sariq (ogohlantirish) bo
 - Tekshiruv misollari (`fem_verification` testi): konsol PL³/3EI, o'q PL/EA, buralish TL/GJ, konsol+massa ω=√(3EI/mL³),
   2 qavatli shear-bino (analitik ω, farq < 1,5% — ustunlarning o'q deformatsiyasi), spektral V = M_eff·Sa.
 
+## Arxitektura rejalaridan 3D — bitta buyruq (v0.36) — `src/bim/ar_project.*`, `ARMODEL` buyrug'i
+
+Bitta DWG/DXF faylidagi qavat rejalari va kesimlardan 3D bino (lenta: **Arxitektura → Rejalardan 3D**, Boshlash sahifasida ham).
+
+- Ko'rinishlar o'q pufakchalari bo'yicha topiladi va "1"/"А" o'qlari bo'yicha ustma-ust tekislanadi (KJ bilan bir xil usul).
+- Reja sarlavhasidan qavatlar: «План 1-го этажа», «План типового этажа (2-9)», «3-qavat rejasi», «2-5 qavatlar rejasi», «Floor plan 3».
+  Yerto'la, tom rejasi va genplan 3D ga kirmaydi; berilmagan qavatlar uchun pastdagi eng yaqin reja ishlatiladi.
+- Kesim/fasad («Разрез 1-1», «Kesim», «Фасад») belgilaridan qavat balandligi va soni: ±0.000 dan teng qadamli zanjir
+  (+3.300, +6.600 … — oxirgisi tom plitasi usti). Topilmasa — parametrdan (ogohlantirish bilan).
+- Elementlar qatlam nomidan (ustun, devor, to'siq devor, zinapoya, lift …); deraza va eshik bloklari («ОК-1», «ДВ-2», WIN, DOOR,
+  DERAZA, ESHIK) chizmadagi joyida qo'yiladi (avtomatik qadam bilan emas) va qavat bo'yicha sanaladi.
+- `ARMODEL fayl.dxf|- [qavatlar] [qavat balandligi]` — `-` joriy chizma. Natija asosiy oynaning 3D ko'rinishida.
+- Namuna: `examples/ar_loyiha/ar_loyiha.dxf` (`make_ar.py` bilan yaratilgan, sintetik). Testlar: `ar_title_and_floor_chain`,
+  `ar_project_from_plans_and_section`.
+
 ## O'rnatish (Windows)
 
 Logotip, ochilish oynasi, `.exe` ikonkasi. Inno Setup o'rnatuvchisi (`apps/win/asiacad.iss`): Visual C++ runtime avtomatik,

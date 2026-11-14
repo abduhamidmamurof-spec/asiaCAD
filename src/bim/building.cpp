@@ -862,7 +862,20 @@ BuildingModel buildModel(const PlanInput& typical, const BuildingParams& p, cons
                 const Frame f = frameOf(inf[i]);
                 struct Gap { double a0, a1, zb, zt; bool door; };
                 std::vector<Gap> gaps;
-                if (p.facade && zTop - floorLvl > 1.0) {
+                if (p.facade && zTop - floorLvl > 1.0 && !pl.marks.empty()) {
+                    // rejadagi bloklar: devor o'qiga yaqin (qalinlik + 0.4 m) va uzunligi ichida — o'sha joyda
+                    for (const auto& mk : pl.marks) {
+                        const Vec3 d = mk.c - f.o;
+                        const double a = d.x * f.u.x + d.y * f.u.y, b = d.x * f.v.x + d.y * f.v.y;
+                        if (b < -0.4 || b > f.W + 0.4 || a < 0 || a > f.L) continue;
+                        const double w = std::clamp(mk.w > 0.3 ? mk.w : (mk.door ? p.doorW : p.winW), 0.4, f.L - 0.2);
+                        const double a0 = std::clamp(a - w / 2, 0.1, f.L - 0.1 - w), a1 = a0 + w;
+                        if (std::any_of(gaps.begin(), gaps.end(), [&](const Gap& g) { return g.a1 > a0 && g.a0 < a1; })) continue;
+                        if (mk.door) gaps.push_back({a0, a1, floorLvl, std::min(zTop - 0.1, floorLvl + p.doorH), true});
+                        else gaps.push_back({a0, a1, floorLvl + p.sill, std::min(zTop - 0.1, floorLvl + p.sill + p.winH), false});
+                    }
+                    std::sort(gaps.begin(), gaps.end(), [](const Gap& x, const Gap& y) { return x.a0 < y.a0; });
+                } else if (p.facade && zTop - floorLvl > 1.0) {
                     int n = static_cast<int>(std::round(f.L / std::max(0.5, p.winStep)));
                     while (n > 0 && n * p.winW + (n + 1) * 0.4 > f.L) --n;
                     for (int j = 0; j < n; ++j) {

@@ -50,7 +50,7 @@ LoadedSheet loadSheet(const SheetFile& f) {
             ins = 6;
         } else {
             DxfImportOptions opt;
-            opt.explodeInserts = true;
+            opt.explodeInserts = !f.keepBlocks;
             // DWG (KJ, qolip planlari ko'pincha DWG da) — ODA File Converter / LibreDWG orqali vaqtinchalik DXF ga
             std::string src = f.path;
             if (ext.size() == 5 && ext.substr(1) == ".dwg") src = dwg::toDxf(f.path);
