@@ -19,6 +19,8 @@
 #include "norm_rules_dialog.h"
 #include "seismic_dialog.h"
 #include "shake_view.h"
+#include <asiacad/bim/ar_project.h>
+#include <asiacad/civil/drawset.h>
 #include <QCheckBox>
 #include <QComboBox>
 #include "model3d_view.h"
@@ -2010,6 +2012,27 @@ int main(int argc, char** argv) {
         sv->play();
         CHECK(sv->playing());
         sv->pause();
+        // haqiqiy bino modeli (ARMODEL namunasi): qavat kutilari o'rniga uchburchaklar silkinadi
+        {
+            asiacad::civil::SheetFile f;
+            f.path = std::string(ASIACAD_EXAMPLES_DIR) + "/ar_loyiha/ar_loyiha.dxf";
+            f.keepBlocks = true;
+            const auto ls = asiacad::civil::loadSheet(f);
+            const auto ar = asiacad::bim::buildArProject(*ls.doc, ls.dims, asiacad::bim::ArParams{});
+            auto tris = asiacad::gui::ShakeView::detailFrom(ar.bm);
+            CHECK(tris.size() > 1000);
+            sv->setDetail(std::move(tris), "AR");
+            CHECK(sv->hasDetail());
+            sd.setIntensity(9);
+            QApplication::processEvents();
+            sv->setTime(sv->peakTime());
+            const QImage im = sv->grab().toImage();
+            int glassPx = 0;   // oynalar (havo rang) ko'rinadi
+            for (int y = 0; y < im.height(); y += 2)
+                for (int x = 0; x < im.width(); x += 2) { const QColor c = im.pixelColor(x, y); if (c.blue() > 150 && c.blue() > c.red() + 40 && c.green() > 110) ++glassPx; }
+            CHECK(glassPx > 100);
+            if (shot) sd.grab().save(QString(shot) + "_real.png");
+        }
     }
     std::printf("\nGUI: %d tekshiruv, %d xato\n", checks, failures);
     return failures == 0 ? 0 : 1;

@@ -60,8 +60,102 @@ void ShakeView::setScene(const bim::seismic::BuildingSeis& b, const bim::seismic
         h_.driftMax *= k;
     }
     driftEnv_ = h_.driftEnv;
+    alignDetail();
     if (t_ > duration()) t_ = 0;
     update();
+}
+
+namespace {
+QColor rgbQ(std::uint32_t c) { return QColor(int(c >> 16), int((c >> 8) & 255), int(c & 255)); }
+void addTri(std::vector<ShakeView::DetailTri>& v, const std::array<Vec3, 3>& t, const QColor& c, double alpha) {
+    v.push_back({{t[0].x, t[0].y}, {t[1].x, t[1].y}, {t[2].x, t[2].y}, t[0].z, t[1].z, t[2].z, c, alpha});
+}
+}  // namespace
+
+std::vector<ShakeView::DetailTri> ShakeView::detailFrom(const bim::BuildingModel& m) {
+    std::vector<DetailTri> out;
+    for (const auto& pr : m.prisms) {
+        if (pr.kind == bim::ElemKind::Lean) continue;
+        std::uint32_t c = 0xd6d1c6;
+        if (pr.kind == bim::ElemKind::Column) c = 0xb3aca0;
+        else if (pr.kind == bim::ElemKind::Slab || pr.kind == bim::ElemKind::Roof) c = 0x9fb4cc;
+        else if (pr.kind == bim::ElemKind::FoundationSlab || pr.kind == bim::ElemKind::StripFooting) c = 0x958f85;
+        else if (pr.kind == bim::ElemKind::Infill) c = 0xe4d6be;
+        for (const auto& t : bim::ifcExtrude(pr.outline, pr.holes, pr.z0, pr.z1)) addTri(out, t, rgbQ(c), 1.0);
+    }
+    for (const auto& g : m.glass)
+        if (g.quad.size() == 4) {
+            addTri(out, {g.quad[0], g.quad[1], g.quad[2]}, QColor(120, 170, 215), 0.6);
+            addTri(out, {g.quad[0], g.quad[2], g.quad[3]}, QColor(120, 170, 215), 0.6);
+        }
+    return out;
+}
+
+std::vector<ShakeView::DetailTri> ShakeView::detailFrom(const bim::IfcModel& m) {
+    std::vector<DetailTri> out;
+    for (const auto& e : m.elements) {
+        if (e.type == "IFCSPACE" || e.type == "IFCOPENINGELEMENT" || e.type == "IFCANNOTATION" || e.type == "IFCSITE") continue;
+        for (const auto& part : e.parts) {
+            const QColor c = rgbQ(part.rgb ? part.rgb : bim::ifcDefaultColor(e.type));
+            for (const auto& t : part.tris) addTri(out, t, c, part.alpha);
+        }
+    }
+    return out;
+}
+
+void ShakeView::setDetail(std::vector<DetailTri> tris, const QString& name) {
+    // juda ko'p uchburchak — QPainter sekinlashadi: eng katta yuzalar qoldiriladi (kichik detallar ko'rinmaydi ham)
+    constexpr std::size_t kMax = 60000;
+    if (tris.size() > kMax) {
+        auto area = [](const DetailTri& t) {
+            const double ux = t.b.x - t.a.x, uy = t.b.y - t.a.y, uz = t.zb - t.za, vx = t.c.x - t.a.x, vy = t.c.y - t.a.y, vz = t.zc - t.za;
+            return std::hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx);
+        };
+        std::nth_element(tris.begin(), tris.begin() + kMax, tris.end(), [&](const DetailTri& x, const DetailTri& y) { return area(x) > area(y); });
+        tris.resize(kMax);
+    }
+    detailRaw_ = std::move(tris);
+    detailName_ = name;
+    alignDetail();
+    update();
+}
+
+void ShakeView::alignDetail() {
+    detail_.clear();
+    shade_.clear();
+    if (detailRaw_.empty() || plans_.empty() || z_.empty()) return;
+    // tekislash: XY — reja markazlari (qutilar o'rtasi), Z — model pasti 0 ga
+    double ax0 = 1e300, ax1 = -1e300, ay0 = 1e300, ay1 = -1e300, z0 = 1e300;
+    for (const auto& t : detailRaw_)
+        for (const auto& [q, z] : {std::pair{t.a, t.za}, {t.b, t.zb}, {t.c, t.zc}}) {
+            ax0 = std::min(ax0, q.x); ax1 = std::max(ax1, q.x); ay0 = std::min(ay0, q.y); ay1 = std::max(ay1, q.y); z0 = std::min(z0, z);
+        }
+    double bx0 = 1e300, bx1 = -1e300, by0 = 1e300, by1 = -1e300;
+    for (const auto& pl : plans_)
+        for (const auto& q : pl) { bx0 = std::min(bx0, q.x); bx1 = std::max(bx1, q.x); by0 = std::min(by0, q.y); by1 = std::max(by1, q.y); }
+    const double dx = (bx0 + bx1) / 2 - (ax0 + ax1) / 2, dy = (by0 + by1) / 2 - (ay0 + ay1) / 2;
+    detail_ = detailRaw_;
+    for (auto& t : detail_) {
+        for (auto* q : {&t.a, &t.b, &t.c}) { q->x += dx; q->y += dy; }
+        t.za -= z0; t.zb -= z0; t.zc -= z0;
+    }
+    // chuqurlik bo'yicha (uzoqdan yaqinga) — ko'rinish burchagi o'zgarmaydi, siljish kichik: bir marta saralanadi
+    const double ca = std::cos(kAz), sa = std::sin(kAz), ce = std::cos(kEl), se = std::sin(kEl);
+    auto key = [&](const DetailTri& t) {
+        const double x = (t.a.x + t.b.x + t.c.x) / 3, y = (t.a.y + t.b.y + t.c.y) / 3, z = (t.za + t.zb + t.zc) / 3;
+        return (x * sa + y * ca) * ce + z * se;   // kuzatuvchidan uzoqligi (katta — yaqin)
+    };
+    std::sort(detail_.begin(), detail_.end(), [&](const DetailTri& x, const DetailTri& y) { return key(x) < key(y); });
+    shade_.reserve(detail_.size());
+    for (const auto& t : detail_) {
+        const double ux = t.b.x - t.a.x, uy = t.b.y - t.a.y, uz = t.zb - t.za, vx = t.c.x - t.a.x, vy = t.c.y - t.a.y, vz = t.zc - t.za;
+        double nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+        const double L = std::max(1e-12, std::hypot(nx, ny, nz));
+        nx /= L; ny /= L; nz /= L;
+        // yorug'lik: yuqoridan-chapdan; yuzaning ikki tomoni bir xil (IFC da aylanish yo'nalishi har xil)
+        const double lx = -0.45, ly = 0.35, lz = 0.82;
+        shade_.push_back(0.55 + 0.45 * std::abs(nx * lx + ny * ly + nz * lz));
+    }
 }
 
 double ShakeView::duration() const { return ag_.empty() ? 0 : dt_ * static_cast<double>(ag_.size() - 1); }
@@ -160,14 +254,22 @@ void ShakeView::paintEvent(QPaintEvent*) {
     // masshtab: butun bino (± tebranish zaxirasi) sig'sin
     const double H = z_.back();
     double minx = 1e300, maxx = -1e300, miny = 1e300, maxy = -1e300;
-    for (int i = 0; i < n; ++i)
+    for (int i = 0; i < n && detail_.empty(); ++i)   // haqiqiy model bo'lsa — faqat uning chegarasi
         for (const auto& q : plans_[static_cast<std::size_t>(i)])
             for (double zz : {i ? z_[static_cast<std::size_t>(i - 1)] : 0.0, z_[static_cast<std::size_t>(i)]}) {
                 const QPointF s = proj(q.x, q.y, zz);
                 minx = std::min(minx, s.x()); maxx = std::max(maxx, s.x());
                 miny = std::min(miny, s.y()); maxy = std::max(maxy, s.y());
             }
-    const double margin = H * 0.18;
+    for (std::size_t k = 0; k < detail_.size(); k += 3)
+        for (const auto& [q, zz] : {std::pair{detail_[k].a, detail_[k].za}, {detail_[k].b, detail_[k].zb}, {detail_[k].c, detail_[k].zc}}) {
+            const QPointF s2 = proj(q.x, q.y, zz);
+            minx = std::min(minx, s2.x()); maxx = std::max(maxx, s2.x());
+            miny = std::min(miny, s2.y()); maxy = std::max(maxy, s2.y());
+        }
+    double Hm = H;
+    for (const auto& t : detail_) Hm = std::max({Hm * (detail_.empty() ? 1 : 0), t.za, t.zb, t.zc});
+    const double margin = (detail_.empty() ? H : Hm) * 0.18;
     const double plotTop = 54, plotBot = height() - 92;
     const double sc = std::min((width() - 40) / (maxx - minx + 2 * margin), (plotBot - plotTop) / (maxy - miny + margin * 0.3));
     const QPointF off(width() / 2.0 - (minx + maxx) / 2 * sc, plotBot - maxy * sc - 6);
@@ -196,7 +298,47 @@ void ShakeView::paintEvent(QPaintEvent*) {
     const QPointF light(-0.5, -0.8);
     int worst = -1;
     double worstR = 0;
-    for (int i = 0; i < n; ++i) {
+    if (!detail_.empty()) {
+        // haqiqiy model: qavat sathlaridagi siljishlar, oraliqda chiziqli
+        std::vector<double> dz(static_cast<std::size_t>(n) + 1, 0.0), rr(static_cast<std::size_t>(n), 0.0);
+        for (int i = 0; i < n; ++i) {
+            dz[static_cast<std::size_t>(i) + 1] = dispAt(h_, t_, dt_, i) * exag;
+            rr[static_cast<std::size_t>(i)] = ratioNow(i);
+            if (rr[static_cast<std::size_t>(i)] > worstR) { worstR = rr[static_cast<std::size_t>(i)]; worst = i; }
+        }
+        auto storyOf = [&](double z) {
+            int i = 0;
+            while (i < n - 1 && z > z_[static_cast<std::size_t>(i)]) ++i;
+            return i;
+        };
+        auto dispZ = [&](double z) {
+            if (z <= 0) return 0.0;
+            if (z >= z_.back()) return dz.back();
+            const int i = storyOf(z);
+            const double a = i ? z_[static_cast<std::size_t>(i - 1)] : 0.0, b = z_[static_cast<std::size_t>(i)];
+            const double f = b > a ? (z - a) / (b - a) : 1.0;
+            return dz[static_cast<std::size_t>(i)] * (1 - f) + dz[static_cast<std::size_t>(i) + 1] * f;
+        };
+        auto P = [&](const bim::seismic::P2& q, double z) {
+            const double d = dispZ(z);
+            return S(proj(q.x + gx + (dir_ == 'x' ? d : 0), q.y + gy + (dir_ == 'y' ? d : 0), z));
+        };
+        p.setPen(Qt::NoPen);
+        for (std::size_t k = 0; k < detail_.size(); ++k) {
+            const auto& tr = detail_[k];
+            const QPointF pts[3] = {P(tr.a, tr.za), P(tr.b, tr.zb), P(tr.c, tr.zc)};
+            const double r = rr[static_cast<std::size_t>(storyOf((tr.za + tr.zb + tr.zc) / 3))];
+            const QColor u = utilCol(r);
+            const double mix = r >= 0.9 ? 0.45 : 0.18;   // zo'riqqan qavatlar ko'proq bo'yaladi
+            const double sh = shade_[k];
+            QColor c;
+            c.setRgbF(std::min(1.0, (tr.color.redF() * (1 - mix) + u.redF() * mix) * sh), std::min(1.0, (tr.color.greenF() * (1 - mix) + u.greenF() * mix) * sh),
+                      std::min(1.0, (tr.color.blueF() * (1 - mix) + u.blueF() * mix) * sh), std::clamp(tr.alpha, 0.15, 1.0));
+            p.setBrush(c);
+            p.drawConvexPolygon(pts, 3);
+        }
+    }
+    for (int i = 0; i < n && detail_.empty(); ++i) {
         const auto& pl = plans_[static_cast<std::size_t>(i)];
         if (pl.size() < 3) continue;
         const double z0 = i ? z_[static_cast<std::size_t>(i - 1)] : 0, z1 = z_[static_cast<std::size_t>(i)];
@@ -264,6 +406,10 @@ void ShakeView::paintEvent(QPaintEvent*) {
         const QColor wc = utilCol(worstR);
         p.setPen(wc.lighter(130));
         p.drawText(QRectF(12, 28, width() - 24, 20), Qt::AlignRight, lab(3).arg(worst + 1).arg(std::round(worstR * 100)) + (worstR >= 1 ? "  " + lab(5) : QString()));
+    }
+    if (!detail_.empty() && !detailName_.isEmpty()) {   // qaysi model silkinmoqda
+        p.setPen(QColor(150, 170, 205));
+        p.drawText(QRectF(12, 48, width() - 24, 18), Qt::AlignLeft, detailName_);
     }
     // rang shkalasi
     {

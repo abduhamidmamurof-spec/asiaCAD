@@ -13,6 +13,7 @@
 #include "survey_dialog.h"
 #include "earthwork_dialog.h"
 #include "seismic_dialog.h"
+#include "shake_view.h"
 #include "model3d_view.h"
 #include "ifc_panel.h"
 #include "norm_rules_dialog.h"
@@ -2848,6 +2849,27 @@ SeismicDialog* MainWindow::openSeismic(int tab) {
         seis_ = new SeismicDialog(loc_, this);
         seis_->setStyleSheet(theme_.styleSheet);
         connect(seis_, &SeismicDialog::commandReady, this, [this](const QString& line) { runLine(line); });
+    }
+    // tebranish oynasida haqiqiy bino: yuklangan IFC (ko'rinadigan birinchisi), bo'lmasa ARMODEL yoki bino menyusi modeli
+    {
+        std::vector<ShakeView::DetailTri> tris;
+        QString name;
+        for (const auto& L : ifc_)
+            if (L.visible && L.model) {
+                tris = ShakeView::detailFrom(*L.model);
+                name = QFileInfo(L.path).completeBaseName();
+                break;
+            }
+        if (tris.empty()) {
+            const bim::BuildingModel* bm = nullptr;
+            if (interp_->lastArModel() && !interp_->lastArModel()->prisms.empty()) bm = &*interp_->lastArModel();
+            else if (building_ && ownedHere(building_) && !building_->model().prisms.empty()) bm = &building_->model();
+            if (bm) {
+                tris = ShakeView::detailFrom(*bm);
+                name = t("gui.shake.model_bim");
+            }
+        }
+        seis_->shakeView()->setDetail(std::move(tris), name);
     }
     seis_->tabs()->setCurrentIndex(tab);
     showMenu(seis_);

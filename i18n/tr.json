@@ -240,6 +240,7 @@
     "gui.shake.exag": "Abartma:",
     "gui.shake.loadag": "Akselerogram yükle…",
     "gui.shake.synth": "Yer hareketi: saha spektrumuna uygun yapay akselerogram (20 s)",
+    "gui.shake.model_bim": "Bina modeli",
     "gui.shake.file": "Yer hareketi: {0} (PGA şiddete göre ölçeklendi)",
     "gui.shake.l_time": "t = {0} s",
     "gui.shake.l_roof": "Tepe yerdeğiştirmesi: {0} cm (en çok {1} cm)",

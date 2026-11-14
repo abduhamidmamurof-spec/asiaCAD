@@ -240,6 +240,7 @@
     "gui.shake.exag": "Kattalashtirish:",
     "gui.shake.loadag": "Akselerogramma yuklash…",
     "gui.shake.synth": "Yer harakati: maydon spektriga mos sunʼiy akselerogramma (20 s)",
+    "gui.shake.model_bim": "Bino modeli",
     "gui.shake.file": "Yer harakati: {0} (PGA ballga koʻra masshtablandi)",
     "gui.shake.l_time": "t = {0} s",
     "gui.shake.l_roof": "Tepa siljishi: {0} sm (eng koʻpi {1} sm)",

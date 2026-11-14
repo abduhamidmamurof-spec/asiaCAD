@@ -240,6 +240,7 @@
     "gui.shake.exag": "Exaggeration:",
     "gui.shake.loadag": "Load accelerogram…",
     "gui.shake.synth": "Ground motion: synthetic accelerogram matched to the site spectrum (20 s)",
+    "gui.shake.model_bim": "Building model",
     "gui.shake.file": "Ground motion: {0} (PGA scaled to intensity)",
     "gui.shake.l_time": "t = {0} s",
     "gui.shake.l_roof": "Roof displacement: {0} cm (max {1} cm)",

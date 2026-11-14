@@ -2,6 +2,8 @@
 // AsiaCAD GUI — zilzilada bino tebranishi animatsiyasi: qavat rejalari (PLAN) dan yig'ilgan 3D bino
 // vaqt tarixi (Newmark, modal yig'indi) bo'yicha silkinadi; har qavat rangi perda kesish ishlatilishi
 // (ETABS uslubi: ko'k → yashil → sariq → qizil) bilan; pastda yer akselerogrammasi va vaqt ko'rsatkichi.
+#include <asiacad/bim/building.h>
+#include <asiacad/bim/ifc.h>
 #include <asiacad/bim/seismic.h>
 
 #include <QElapsedTimer>
@@ -18,6 +20,20 @@ public:
     // model + natija (evaluateSeismic) + yer akselerogrammasi (m/s²) → vaqt tarixi hisoblanadi
     void setScene(const bim::seismic::BuildingSeis& b, const bim::seismic::SeisResult& r, char dir, int intensity,
                   const std::vector<double>& ag, double dt);
+    // Haqiqiy bino modeli (IFC / bino moduli / ARMODEL): uchburchaklar dunyo koordinatasida (m). Berilsa — qavat kutilari
+    // o'rniga shu model silkinadi: har tugun o'z balandligidagi qavatlararo siljish bilan (chiziqli), rangi — o'zi
+    // (qavat ishlatilishi rangi ozgina aralashtiriladi). Model reja markazi va pastki belgisi bo'yicha seis rejasiga tekislanadi.
+    struct DetailTri {
+        bim::seismic::P2 a, b, c;
+        double za = 0, zb = 0, zc = 0;
+        QColor color;
+        double alpha = 1;
+    };
+    void setDetail(std::vector<DetailTri> tris, const QString& name = {});
+    static std::vector<DetailTri> detailFrom(const bim::BuildingModel& m);   // prizmalar + oynalar
+    static std::vector<DetailTri> detailFrom(const bim::IfcModel& m);        // IFC elementlari (xonalar, teshiklarsiz)
+    bool hasDetail() const { return !detail_.empty(); }
+    int detailCount() const { return static_cast<int>(detail_.size()); }
     void play();
     void pause();
     bool playing() const;
@@ -41,6 +57,10 @@ protected:
 
 private:
     void tick();
+    void alignDetail();
+    std::vector<DetailTri> detailRaw_, detail_;   // detail_ — tekislangan, chuqurlik bo'yicha saralangan
+    std::vector<double> shade_;
+    QString detailName_;
     std::vector<std::vector<bim::seismic::P2>> plans_;
     std::vector<double> z_;                     // qavat ustki sathi, m
     std::vector<double> ratio_;                 // spektral ishlatilish (wallRatio)
