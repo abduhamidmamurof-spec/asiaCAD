@@ -60,7 +60,9 @@ jobs:
           if (-not (Get-Command iscc -ErrorAction SilentlyContinue)) { choco install innosetup -y --no-progress | Out-Null }
           $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
           if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
-          & $iscc /DSrcDir=..\..\AsiaCAD apps\win\asiacad.iss
+          $m = Select-String -Path CMakeLists.txt -Pattern 'project\(AsiaCAD VERSION (\d+)\.(\d+)'
+          $ver = "$($m.Matches[0].Groups[1].Value).$($m.Matches[0].Groups[2].Value)"
+          & $iscc /DSrcDir=..\..\AsiaCAD /DAppVer=$ver apps\win\asiacad.iss
 
       - uses: actions/upload-artifact@v4
         with:

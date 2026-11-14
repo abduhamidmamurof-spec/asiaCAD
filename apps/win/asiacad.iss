@@ -1,7 +1,7 @@
 ; AsiaCAD — Windows o'rnatuvchisi (Inno Setup 6)
-; GitHub Actions: iscc /DSrcDir=..\..\AsiaCAD /DAppVer=0.33 apps\win\asiacad.iss
+; GitHub Actions: iscc /DSrcDir=..\..\AsiaCAD /DAppVer=0.36 apps\win\asiacad.iss
 #ifndef AppVer
-  #define AppVer "0.33"
+  #define AppVer "0.36"
 #endif
 #ifndef SrcDir
   #define SrcDir "..\..\AsiaCAD"

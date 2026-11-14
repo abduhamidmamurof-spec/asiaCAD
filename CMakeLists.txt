@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
-project(AsiaCAD VERSION 0.2.0 LANGUAGES CXX)
+project(AsiaCAD VERSION 0.36.0 LANGUAGES CXX)
+
+# Dastur versiyasi — yagona manba (GUI, CLI, o'rnatuvchi)
+add_compile_definitions(ASIACAD_VERSION="${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

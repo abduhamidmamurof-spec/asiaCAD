@@ -756,7 +756,7 @@ QWidget* MainWindow::buildStartPage() {
         auto* ht = new QVBoxLayout;
         ht->setSpacing(2);
         auto* title = new QLabel(QStringLiteral("<span style='font-size:26px; font-weight:800;'>Asia<span style='color:#E0A526'>CAD</span></span>"
-                                                "<span style='font-size:13px; color:#7F92BF;'>&nbsp;&nbsp;0.31</span>"), body);
+                                                "<span style='font-size:13px; color:#7F92BF;'>&nbsp;&nbsp;" ASIACAD_VERSION "</span>"), body);
         title->setObjectName("startTitle");
         title->setTextFormat(Qt::RichText);
         ht->addWidget(title);

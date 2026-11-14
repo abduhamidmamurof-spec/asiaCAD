@@ -547,7 +547,7 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     connect(k, &QShortcut::activated, this, [this] { palette_->open(view_); });
 
     setMode(UiMode::Classic);
-    appendHistory(QString::fromStdString(loc_.tr("app.banner", {"0.31"})), theme_.accent);
+    appendHistory(QString::fromStdString(loc_.tr("app.banner", {ASIACAD_VERSION})), theme_.accent);
     initTabs();
     retranslate();
     refreshLayers();
@@ -885,7 +885,7 @@ QWidget* MainWindow::buildAppBar() {
     logo->setPixmap(makeIcon("logo", QColor("#E0A526"), QColor(), 64).pixmap(24, 24));
     h->addWidget(logo);
     auto* name = new QLabel(QStringLiteral("<span style='font-size:16px; font-weight:800;'>Asia<span style='color:#E0A526'>CAD</span></span>"
-                                           "<span style='font-size:11px; color:#7F92BF;'>&nbsp;0.31</span>"),
+                                           "<span style='font-size:11px; color:#7F92BF;'>&nbsp;" ASIACAD_VERSION "</span>"),
                             appBar_);
     name->setObjectName("brandName");
     name->setTextFormat(Qt::RichText);
