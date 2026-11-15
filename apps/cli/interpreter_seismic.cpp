@@ -76,14 +76,21 @@ bool Interpreter::dispatchSeismic(const std::string& cmd, const Args& a) {
         const auto m = kv(a, 1, &flags);
         auto has = [&](const char* f) { return std::find(flags.begin(), flags.end(), f) != flags.end(); };
         for (const auto& f : flags)
-            if (f != "BUILDING" && f != "GENPLAN" && f != "NOMARKERS") throw usage();
+            if (f != "BUILDING" && f != "GENPLAN" && f != "NOMARKERS" && f != "SHELL" && f != "IFCCOLORS") throw usage();
         bim::Scene sc;
         int parts = 0;
         if (auto it = m.find("IFC"); it != m.end()) {
             bim::IfcModel im;
             std::string err;
             if (!bim::readIfc(it->second, im, err, false)) throw Error(err, {it->second});
-            bim::addIfc(sc, im);
+            const std::size_t before = sc.triangleCount();
+            bim::addIfc(sc, im, bim::IfcExportOptions{has("SHELL"), has("IFCCOLORS")});
+            if (has("SHELL")) {
+                std::size_t all = 0;
+                for (const auto& e : im.elements)
+                    for (const auto& p : e.parts) all += p.tris.size();
+                say("export.msg.shell", {std::to_string(sc.triangleCount() - before), std::to_string(all)});
+            }
             ++parts;
         }
         const bool wantBuilding = has("BUILDING") || (!m.count("IFC") && !has("GENPLAN"));

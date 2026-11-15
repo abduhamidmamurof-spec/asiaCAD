@@ -5001,6 +5001,47 @@ TEST(scene_export_prism_gltf_obj_sun) {
     CHECK(ev.azimuthDeg > 220 && ev.azimuthDeg < 260 && ev.elevationDeg < 12);
 }
 
+TEST(scene_export_ifc_shell_colors) {
+    using namespace bim;
+    // 20×20 xona: 4 tashqi devor, markazda ichki devor va mebel; qobiq — faqat tashqi devorlar
+    IfcModel m;
+    auto box = [&](const char* type, double x0, double y0, double x1, double y1, std::uint32_t rgb, double alpha = 1.0) {
+        IfcElement e;
+        e.type = type;
+        e.storey = 0;
+        IfcPart p;
+        p.rgb = rgb;
+        p.alpha = alpha;
+        const Vec3 a{x0, y0, 0}, b{x1, y0, 0}, c{x1, y1, 0}, d{x0, y1, 0}, a3{x0, y0, 3}, b3{x1, y0, 3}, c3{x1, y1, 3}, d3{x0, y1, 3};
+        p.tris = {{a, b, b3}, {a, b3, a3}, {b, c, c3}, {b, c3, b3}, {c, d, d3}, {c, d3, c3}, {d, a, a3}, {d, a3, d3}, {a3, b3, c3}, {a3, c3, d3}};
+        e.parts.push_back(p);
+        m.elements.push_back(e);
+    };
+    box("IFCWALL", 0, 0, 20, 0.3, 0xC8C8C8);       // 0 tashqi
+    box("IFCWALL", 0, 19.7, 20, 20, 0xC8C8C8);     // 1 tashqi
+    box("IFCWALL", 0, 0, 0.3, 20, 0xC8C8C8);       // 2 tashqi
+    box("IFCWALL", 19.7, 0, 20, 20, 0xC8C8C8);     // 3 tashqi
+    box("IFCWALL", 9.9, 5, 10.1, 15, 0xC8C8C8);    // 4 ichki
+    box("IFCFURNISHINGELEMENT", 4, 4, 5, 5, 0x804020);   // 5 mebel
+    box("IFCWINDOW", 5, -0.05, 7, 0.35, 0x88AACC, 0.3);  // 6 deraza (tashqi)
+    const auto keep = ifcShellMask(m);
+    CHECK(keep.size() == 7);
+    CHECK(keep[0] && keep[1] && keep[2] && keep[3] && keep[6]);
+    CHECK(!keep[4] && !keep[5]);
+    Scene a, b;
+    addIfc(a, m, IfcExportOptions{true, false});
+    addIfc(b, m, IfcExportOptions{false, true});
+    CHECK(a.triangleCount() == 5 * 10);
+    CHECK(b.triangleCount() == 7 * 10);
+    bool glass = false, wall = false;
+    for (const auto& mesh : b.meshes) {
+        glass |= mesh.material == "IFC_88AACC_G";
+        wall |= mesh.material == "IFC_C8C8C8";
+    }
+    CHECK(glass && wall);
+    CHECK(sceneMaterial("IFC_88AACC_G").opacity < 0.5 && std::abs(sceneMaterial("IFC_C8C8C8").rgb[0] - 200 / 255.0) < 1e-9);
+}
+
 TEST(genplan_zones_curbs_parking) {
     using namespace civil;
     CHECK(gpClassifyLayer("VP-H-OZELENENIE", gpDefaultRules()) == GpZone::Green);

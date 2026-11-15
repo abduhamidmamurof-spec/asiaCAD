@@ -810,11 +810,15 @@ Normaga mos kelmagan elementlar 3D da qizil (xato) yoki sariq (ogohlantirish) bo
 
 ## Render uchun 3D sahna (v0.34)
 
-- **EXPORT3D fayl.gltf|fayl.obj [IFC=fayl.ifc] [BUILDING] [GENPLAN] [NOMARKERS] [DATE=2026-06-21] [TIME=16:00]** — D5 Render,
+- **EXPORT3D fayl.gltf|fayl.obj [IFC=fayl.ifc [SHELL] [IFCCOLORS]] [BUILDING] [GENPLAN] [NOMARKERS] [DATE=2026-06-21] [TIME=16:00]** — D5 Render,
   Lumion, Twinmotion, Unreal, 3ds Max uchun: glTF 2.0 (.gltf + .bin, PBR, Y yuqoriga) yoki OBJ + MTL; materiallar standart nomlar
   bilan (AC_Beton, AC_Shisha, AC_Gazoblok, AC_Asfalt, AC_Plitka, AC_Chim …) — render dasturida bir marta moslanadi; IFC modeli,
   chizmadagi bino (BINO) va genreja qoplamalari; `_markerlar.csv` — daraxt/buta/odam/avto joylari (render dasturining o'z
   kutubxonasidan real aktivlar qo'yish uchun); `_sahna.json` — quyosh azimuti va balandligi (Toshkent, sana/soat).
+- `SHELL` — IFC'dan faqat tashqi qobiq: har qavat elementlari 0,4 m to'rga yoziladi, tashqaridan to'ldirish bilan tashqi
+  bo'shliq topiladi, unga yaqin (≤0,8 m) elementlar qoladi; mebel, muhandislik jihozlari, xonalar, ichki devorlar tashlanadi
+  (Revit kvartira blokida uchburchaklar ~10 barobar kam — yuzlab blok render dasturiga sig'adi). `IFCCOLORS` — materiallar IFC
+  rangi bo'yicha (`IFC_RRGGBB`, shaffof — `_G`), render dasturida rang bo'yicha moslash uchun.
 - Menyu `Ko'rinish → Render → Renderga eksport (D5)`.
 
 ## Fasad (v0.34)

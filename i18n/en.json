@@ -1201,6 +1201,7 @@
     "kj.view.SLAB_TOP": "Slab: extra top",
     "kj.view.OTHER": "Other",
     "kj.chk.no_views": "No views with grid bubbles found (not a KJ project?)",
+    "export.msg.shell": "Exterior shell: {0} triangles (of {1})",
     "desc.ARMODEL": "3D building from architectural plans: floor plans and section/elevation levels from one file (file.dxf|- [floors] [floor height])",
     "ar.msg.views": "Views: {0}, plans {1}, sections/elevations {2}",
     "ar.msg.view": "  {0}: «{1}» floors {2}; walls {3}, columns {4}, masonry {5}, windows {6}, doors {7}",

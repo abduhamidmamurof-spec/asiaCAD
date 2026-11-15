@@ -46,6 +46,22 @@ const std::vector<SceneMaterial>& sceneMaterials() {
 const SceneMaterial& sceneMaterial(const std::string& name) {
     for (const auto& m : sceneMaterials())
         if (m.name == name) return m;
+    // "IFC_RRGGBB" / "IFC_RRGGBB_G" (shaffof) — IFC rangidan
+    if (name.size() >= 10 && name.rfind("IFC_", 0) == 0) {
+        static std::map<std::string, SceneMaterial> cache;
+        auto it = cache.find(name);
+        if (it == cache.end()) {
+            SceneMaterial m;
+            m.name = name;
+            const unsigned v = static_cast<unsigned>(std::strtoul(name.substr(4, 6).c_str(), nullptr, 16));
+            m.rgb = {((v >> 16) & 255) / 255.0, ((v >> 8) & 255) / 255.0, (v & 255) / 255.0};
+            const bool glass = name.size() > 10 && name.substr(10) == "_G";
+            m.roughness = glass ? 0.05 : 0.7;
+            m.opacity = glass ? 0.4 : 1.0;
+            it = cache.emplace(name, m).first;
+        }
+        return it->second;
+    }
     return sceneMaterials().back();
 }
 
@@ -125,6 +141,104 @@ void addBuilding(Scene& s, const BuildingModel& m) {
         // ramka (alyuminiy) — chekka bo'ylab ingichka chiziq o'rniga shishaning orqa yuzi
         s.add("AC_Shisha", {g.quad[0], g.quad[2], g.quad[1]});
         s.add("AC_Shisha", {g.quad[0], g.quad[3], g.quad[2]});
+    }
+}
+
+std::vector<bool> ifcShellMask(const IfcModel& m, double cell) {
+    const std::size_t n = m.elements.size();
+    std::vector<bool> keep(n, false);
+    double x0 = 1e300, y0 = 1e300, x1 = -1e300, y1 = -1e300;
+    for (const auto& e : m.elements)
+        for (const auto& p : e.parts)
+            for (const auto& t : p.tris)
+                for (const auto& q : t) { x0 = std::min(x0, q.x); y0 = std::min(y0, q.y); x1 = std::max(x1, q.x); y1 = std::max(y1, q.y); }
+    if (x0 > x1) return keep;
+    x0 -= 2 * cell; y0 -= 2 * cell; x1 += 2 * cell; y1 += 2 * cell;
+    const int W = static_cast<int>(std::ceil((x1 - x0) / cell)) + 1, H = static_cast<int>(std::ceil((y1 - y0) / cell)) + 1;
+    if (static_cast<long long>(W) * H > 40'000'000) { std::fill(keep.begin(), keep.end(), true); return keep; }   // juda katta hudud — filtrsiz
+    auto drop = [&](const IfcElement& e) {
+        const std::string c = ifcCategory(e.type);
+        return c == "FURNITURE" || c == "MEP" || c == "SPACE" || c == "OPENING" || e.type == "IFCFURNISHINGELEMENT" || e.type.rfind("IFCFLOW", 0) == 0 ||
+               e.type == "IFCDISTRIBUTIONFLOWELEMENT" || e.type == "IFCSPACE" || e.type == "IFCOPENINGELEMENT";
+    };
+    // qavatlar bo'yicha (qavatsiz elementlar — hammasi bilan)
+    std::map<int, std::vector<std::size_t>> byStorey;
+    for (std::size_t i = 0; i < n; ++i)
+        if (!drop(m.elements[i])) byStorey[m.elements[i].storey].push_back(i);
+    std::vector<unsigned char> g(static_cast<std::size_t>(W) * H);
+    auto cellsOf = [&](const IfcElement& e, auto&& fn) {
+        for (const auto& p : e.parts)
+            for (const auto& t : p.tris) {
+                const double ax = std::min({t[0].x, t[1].x, t[2].x}), bx = std::max({t[0].x, t[1].x, t[2].x});
+                const double ay = std::min({t[0].y, t[1].y, t[2].y}), by = std::max({t[0].y, t[1].y, t[2].y});
+                const int i0 = static_cast<int>((ax - x0) / cell), i1 = static_cast<int>((bx - x0) / cell);
+                const int j0 = static_cast<int>((ay - y0) / cell), j1 = static_cast<int>((by - y0) / cell);
+                // uzun qiya uchburchak (diagonal devor) qutisi butun hududni to'ldirmasin: katta qutini tashlab, uchlarini belgilash
+                if ((i1 - i0) * (j1 - j0) > 400) {
+                    for (const auto& q : t) fn(static_cast<int>((q.x - x0) / cell), static_cast<int>((q.y - y0) / cell));
+                    continue;
+                }
+                for (int j = j0; j <= j1; ++j)
+                    for (int i = i0; i <= i1; ++i) fn(i, j);
+            }
+    };
+    const std::vector<std::size_t>* all = nullptr;
+    if (auto it = byStorey.find(-1); it != byStorey.end()) all = &it->second;
+    for (const auto& [st, ids] : byStorey) {
+        std::fill(g.begin(), g.end(), 0);   // 0 bo'sh, 1 band, 2 tashqi
+        auto mark = [&](int i, int j) { if (i >= 0 && j >= 0 && i < W && j < H) g[static_cast<std::size_t>(j) * W + i] = 1; };
+        for (std::size_t id : ids) cellsOf(m.elements[id], mark);
+        if (all && st != -1)
+            for (std::size_t id : *all) cellsOf(m.elements[id], mark);
+        std::vector<int> q;
+        for (int i = 0; i < W; ++i) { q.push_back(i); q.push_back((H - 1) * W + i); }
+        for (int j = 0; j < H; ++j) { q.push_back(j * W); q.push_back(j * W + W - 1); }
+        for (int k : q) g[static_cast<std::size_t>(k)] = g[static_cast<std::size_t>(k)] ? g[static_cast<std::size_t>(k)] : 2;
+        for (std::size_t h = 0; h < q.size(); ++h) {
+            const int k = q[h], i = k % W, j = k / W;
+            if (g[static_cast<std::size_t>(k)] != 2) continue;
+            for (auto [di, dj] : {std::pair{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) {
+                const int a = i + di, b = j + dj;
+                if (a < 0 || b < 0 || a >= W || b >= H) continue;
+                auto& c = g[static_cast<std::size_t>(b) * W + a];
+                if (c == 0) { c = 2; q.push_back(b * W + a); }
+            }
+        }
+        for (std::size_t id : ids) {
+            bool ext = false;
+            cellsOf(m.elements[id], [&](int i, int j) {
+                if (ext) return;
+                for (int dj = -2; dj <= 2 && !ext; ++dj)
+                    for (int di = -2; di <= 2 && !ext; ++di) {
+                        const int a = i + di, b = j + dj;
+                        if (a >= 0 && b >= 0 && a < W && b < H && g[static_cast<std::size_t>(b) * W + a] == 2) ext = true;
+                    }
+            });
+            if (ext) keep[id] = true;
+        }
+    }
+    return keep;
+}
+
+void addIfc(Scene& s, const IfcModel& m, const IfcExportOptions& o) {
+    if (!o.shell && !o.colors) { addIfc(s, m); return; }
+    std::vector<bool> keep = o.shell ? ifcShellMask(m) : std::vector<bool>(m.elements.size(), true);
+    for (std::size_t i = 0; i < m.elements.size(); ++i) {
+        if (!keep[i]) continue;
+        const auto& e = m.elements[i];
+        const std::string cat = ifcCategory(e.type);
+        if (cat == "SPACE" || cat == "OPENING" || cat == "REBAR") continue;
+        for (const auto& p : e.parts) {
+            std::string mat;
+            if (o.colors) {
+                const std::uint32_t c = p.rgb ? p.rgb : ifcDefaultColor(e.type);
+                mat = std::format("IFC_{:06X}", c & 0xffffff);
+                if (p.alpha < 0.7 || cat == "WINDOW" && p.alpha < 0.95) mat += "_G";
+            } else {
+                mat = cat == "WINDOW" || cat == "PLATE" || cat == "CURTAINWALL" || p.alpha < 0.7 ? "AC_Shisha" : cat == "RAILING" || cat == "MEMBER" ? "AC_Metall" : "AC_Beton";
+            }
+            for (const auto& t : p.tris) s.add(mat, t);
+        }
     }
 }
 

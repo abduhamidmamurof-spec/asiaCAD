@@ -48,6 +48,18 @@ void addPrism(Scene& s, const std::string& material, const std::vector<Vec3>& ou
 void addBuilding(Scene& s, const BuildingModel& m);
 // IFC modeli: toifa va rang bo'yicha material
 void addIfc(Scene& s, const IfcModel& m);
+// Render uchun IFC eksporti sozlamalari:
+//  shell — faqat tashqi qobiq (fasad): har qavatda elementlar rejasi to'rga (0.4 m) yoziladi, tashqaridan to'ldirish (flood fill)
+//          bilan tashqi bo'shliq topiladi; unga 0.8 m dan yaqin elementlar qoladi. Mebel, muhandislik jihozlari, xonalar — tashlanadi.
+//          Revit kvartira blokida uchburchaklar ~10 barobar kamayadi — yuzlab nusxa render dasturiga sig'adi.
+//  colors — material IFC rangi bo'yicha ("IFC_RRGGBB"; render dasturida rang bo'yicha moslash), aks holda AC_* toifalar
+struct IfcExportOptions {
+    bool shell = false;
+    bool colors = false;
+};
+void addIfc(Scene& s, const IfcModel& m, const IfcExportOptions& o);
+// Tashqi qobiq niqobi (elements bilan parallel): true — tashqaridan ko'rinadi
+std::vector<bool> ifcShellMask(const IfcModel& m, double cell = 0.4);
 // Markazni (XY o'rtasi, eng past Z) origin ga yozadi
 void centerScene(Scene& s);
 

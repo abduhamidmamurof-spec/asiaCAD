@@ -1201,6 +1201,7 @@
     "kj.view.SLAB_TOP": "Döşeme: ek üst",
     "kj.view.OTHER": "Diğer",
     "kj.chk.no_views": "Aks balonlu görünüş bulunamadı (KJ proje değil mi?)",
+    "export.msg.shell": "Dış kabuk: {0} üçgen ({1} içinden)",
     "desc.ARMODEL": "Mimari planlardan 3D bina: tek dosyadaki kat planları ve kesit/görünüş kotlarından (dosya.dxf|- [kat sayısı] [kat yüksekliği])",
     "ar.msg.views": "Görünüşler: {0}, planlar {1}, kesit/görünüş {2}",
     "ar.msg.view": "  {0}: «{1}» katlar {2}; duvar {3}, kolon {4}, dolgu duvar {5}, pencere {6}, kapı {7}",
