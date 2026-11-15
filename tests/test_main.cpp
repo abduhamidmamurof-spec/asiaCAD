@@ -5295,6 +5295,65 @@ TEST(fem_verification) {
     CHECK(m2.nodes.size() == 11 && m2.beams.size() == 10 && m2.nodes[0].fix[5]);
     CHECK_THROWS(fe::parseModel("BEAM 1 1 2 1 1"));
 }
+TEST(fem_distributed_load_and_rc_design) {
+    namespace fe = asiacad::bim::fem;
+    // ikki uchi qistirilgan rigel L = 6, q = 10 kN/m: uchlarda qL²/12 = 30, o'rtada qL²/24 = 15, burchak 0, egilish qL⁴/384EI
+    fe::Model m;
+    m.mats[1] = {3.0e7, 1.25e7};
+    m.secs[1] = {0.3 * 0.6, 0.3 * 0.216 / 12, 0.6 * 0.027 / 12, 0.0037};
+    fe::Node a, b, c;
+    a.id = 1; a.p = {0, 0, 0}; a.fix = {true, true, true, true, true, true};
+    c.id = 2; c.p = {3, 0, 0};
+    b.id = 3; b.p = {6, 0, 0}; b.fix = {true, true, true, true, true, true};
+    m.nodes = {a, c, b};
+    m.beams = {{1, 1, 2, 1, 1, {}}, {2, 2, 3, 1, 1, {}}};
+    m.qloads[1] = {0, 0, -10};
+    m.qloads[2] = {0, 0, -10};
+    auto r = fe::solveStatic(m);
+    const double EI = 3.0e7 * m.secs[1].Iy;
+    CHECK(std::abs(-r.disp[1][2] - 10.0 * 1296 / (384 * EI)) / (10.0 * 1296 / (384 * EI)) < 1e-6);
+    CHECK(std::abs(r.reactions[1][2] - 30) < 1e-6 && std::abs(r.reactions[3][2] - 30) < 1e-6);
+    CHECK(std::abs(std::abs(r.reactions[1][4]) - 30) < 1e-6);
+    const auto e0 = fe::internalForces(m, 0, r.forces[0], 0), e1 = fe::internalForces(m, 0, r.forces[0], 3), e2 = fe::internalForces(m, 1, r.forces[1], 3);
+    CHECK(std::abs(std::abs(e0[4]) - 30) < 1e-6 && std::abs(std::abs(e1[4]) - 15) < 1e-6 && std::abs(std::abs(e2[4]) - 30) < 1e-6);
+    CHECK(e0[4] * e1[4] < 0);   // tayanch va oraliq momenti ishorasi qarama-qarshi
+    CHECK(std::abs(std::abs(e0[2]) - 30) < 1e-6 && std::abs(e1[2]) < 1e-6);   // Q: tayanchda qL/2, o'rtada 0
+    // format: QLOAD
+    const auto m2 = fe::parseModel(fe::writeModel(m));
+    CHECK(m2.qloads.size() == 2 && std::abs(m2.qloads.at(1).z + 10) < 1e-12);
+    CHECK_THROWS(fe::parseModel("NODE 1 0 0 0\nQLOAD 5 0 0 -1"));
+    // temirbeton: rigel 0,3×0,6 B25, M = 30: αm = 30/(14500·0,3·0,55²) ≈ 0,023 → yashil
+    fe::RcParams p;
+    CHECK(fe::rcConcreteClass("b30", p) && std::abs(p.Rb - 17000) < 1e-9 && !fe::rcConcreteClass("B99", p));
+    p = fe::RcParams{};
+    auto d = fe::designRc(m, r, nullptr, p);
+    CHECK(d.size() == 2 && !d[0].column);
+    CHECK(std::abs(d[0].b - 0.3) < 1e-9 && std::abs(d[0].h - 0.6) < 1e-9);
+    CHECK(std::abs(d[0].My - 30) < 1e-6 && d[0].util < 0.2 && d[0].asReq > 1.0 && d[0].asReq < 1.5);   // As ≈ 30/(435000·0,98·0,55) ≈ 1,28 sm²
+    // katta yuk — kesim yetmaydi (qizil)
+    m.qloads[1] = {0, 0, -400};
+    m.qloads[2] = {0, 0, -400};
+    d = fe::designRc(m, fe::solveStatic(m), nullptr, p);
+    CHECK(d[0].util > 1);
+    // ramka: ingichka ustunlar 9 qavatda — qizil, katta ustunlar — yashil
+    auto f = fe::frameGenerator({6, 6}, {6}, 9, 3.3, 0.25, 0.25, 0.3, 0.6, 3.0e7, 1.0, 12.0);
+    auto rc = fe::designRc(f, fe::solveStatic(f), nullptr, p);
+    double worst = 0;
+    for (const auto& x : rc) if (x.column) worst = std::max(worst, x.util);
+    CHECK(worst > 1);
+    f = fe::frameGenerator({6, 6}, {6}, 9, 3.3, 0.6, 0.6, 0.3, 0.6, 3.0e7, 1.0, 12.0);
+    rc = fe::designRc(f, fe::solveStatic(f), nullptr, p);
+    worst = 0;
+    for (const auto& x : rc) if (x.column) worst = std::max(worst, x.util);
+    CHECK(worst <= 1 && worst > 0.1);
+    // spektral element kuchlari: ustun pastida kesuvchi kuch bor
+    const auto fm = fe::solveModes(f, 6);
+    const auto sp = fe::responseSpectrum(f, fm, [](double) { return 2.0; }, 0);
+    CHECK(sp.forces.size() == f.beams.size());
+    double qmax = 0;
+    for (const auto& x : sp.forces) qmax = std::max({qmax, x.f[1], x.f[2]});
+    CHECK(qmax > 1);
+}
 TEST(cli_fem_command) {
     const auto s = runScript("tr", {"FEM GEN=6x3;6x2 FLOORS=9 H=3.3 MODES=12 DRAW"});
     CHECK(s.find("Sonlu eleman modeli: 120 düğüm") != std::string::npos);
@@ -5303,4 +5362,12 @@ TEST(cli_fem_command) {
     CHECK(s.find("taban kesme kuvveti") != std::string::npos);
     const auto u = runScript("uz", {"STATIKA GEN=6x2 FLOORS=3 MODES=1"});
     CHECK(u.find("✗ Samarali massa") != std::string::npos);
+    // oldindan o'lchamlash: ingichka ustunlar — qizil va tavsiya; katta ustunlar — qizilsiz
+    const auto d = runScript("uz", {"FEM GEN=6x2;6 FLOORS=9 COL=0.3x0.3 MODES=6 DESIGN CONC=B25"});
+    CHECK(d.find("Oldindan oʻlchamlash (doimiy + seysmik)") != std::string::npos);
+    CHECK(d.find("qizil 0") == std::string::npos && d.find("tavsiya:") != std::string::npos);
+    const auto ok = runScript("en", {"FEM GEN=6x2;6 FLOORS=3 COL=0.5x0.5 MODES=6 R=3 DESIGN"});
+    CHECK(ok.find("red 0") != std::string::npos);
+    CHECK(runScript("uz", {"FEM GEN=6x2 FLOORS=2 DESIGN CONC=B99"}).find("Foydalanish") != std::string::npos ||
+          runScript("uz", {"FEM GEN=6x2 FLOORS=2 DESIGN CONC=B99"}).find("Xato") != std::string::npos);
 }

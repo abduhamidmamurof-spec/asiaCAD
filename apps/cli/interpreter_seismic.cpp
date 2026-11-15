@@ -385,10 +385,11 @@ bool Interpreter::dispatchSeismic(const std::string& cmd, const Args& a) {
     if (cmd == "FEM") {   // 3D sterjenli FEM: statik, xos tebranishlar, spektral (Lot-16 spektri), DRAW — chizmaga
         std::vector<std::string> flags;
         const auto m = kv(a, 0, &flags);
-        bool draw = false;
+        bool draw = false, design = false;
         std::string file;
         for (const auto& f : flags) {
             if (f == "DRAW") draw = true;
+            else if (f == "DESIGN") design = true;
             else if (file.empty()) file = f;
             else throw usage();
         }
@@ -418,7 +419,7 @@ bool Interpreter::dispatchSeismic(const std::string& cmd, const Args& a) {
             const auto [bb, bh] = pair("BEAM", 0.3, 0.6);
             const int fl = static_cast<int>(num(m, "FLOORS", 5));
             if (dx.empty() || dy.empty() || fl < 1) throw usage();
-            md = bim::fem::frameGenerator(dx, dy, fl, num(m, "H", 3.3), cb, ch, bb, bh, num(m, "E", 3.0e7), num(m, "Q", 1.0), num(m, "G", 10.0));
+            md = bim::fem::frameGenerator(dx, dy, fl, num(m, "H", 3.3), cb, ch, bb, bh, num(m, "E", 3.0e7), num(m, "Q", 1.0), num(m, "G", 10.0), design);
         } else {
             if (file.empty()) throw usage();
             std::ifstream f(file, std::ios::binary);
@@ -442,9 +443,18 @@ bool Interpreter::dispatchSeismic(const std::string& cmd, const Args& a) {
             sh = &wb.add(loc_.tr("fem.xl.sheet"));
             sh->widths = {28, 14, 14, 14, 14};
         }
+        bim::fem::RcParams rp;
+        if (auto it = m.find("CONC"); it != m.end() && !bim::fem::rcConcreteClass(it->second, rp)) throw usage();
+        if (auto it = m.find("RS"); it != m.end()) rp.Rs = parseNumber(it->second) * 1000;
+        bim::fem::StaticResult stat;
+        bool haveStatic = false;
+        std::vector<bim::fem::BeamForces> seisEnv;   // yo'nalishlar bo'yicha eng katta (spektral)
+        std::vector<bim::fem::RcCheck> rc;
         try {
-            if (!md.loads.empty()) {
+            if (!md.loads.empty() || !md.qloads.empty()) {
                 const auto r = bim::fem::solveStatic(md);
+                stat = r;
+                haveStatic = true;
                 double rz = 0;
                 for (const auto& [n, R] : r.reactions) rz += R[2];
                 double maxM = 0;
@@ -481,10 +491,54 @@ bool Interpreter::dispatchSeismic(const std::string& cmd, const Args& a) {
                 for (char d : dirs) {
                     const int di = d == 'Y' ? 1 : 0;
                     const auto sp = bim::fem::responseSpectrum(md, modes, [&](double T) { return spec.sa(T) * 9.81 * scale / R; }, di);
+                    if (seisEnv.empty()) seisEnv.assign(md.beams.size(), bim::fem::BeamForces{});
+                    for (std::size_t bi = 0; bi < sp.forces.size(); ++bi)
+                        for (std::size_t c = 0; c < 12; ++c) seisEnv[bi].f[c] = std::max(seisEnv[bi].f[c], sp.forces[bi].f[c]);
                     say("fem.msg.spectrum", {std::string(1, d), std::to_string(rp), std::format("{:.0f}", sp.baseShear), std::format("{:.1f}", sp.roof * 1000),
                                              std::format("{:.1f}", totMass > 0 ? sp.baseShear / (totMass * 9.81) * 100 : 0.0)});
                     if (sh) sh->add({xlsx::Cell::s(loc_.tr("fem.xl.shear") + " " + std::string(1, d)), xlsx::Cell::n(sp.baseShear, 0), xlsx::Cell::s(loc_.tr("fem.xl.roof")),
                                      xlsx::Cell::n(sp.roof * 1000, 1)});
+                }
+            }
+            // temirbeton oldindan o'lchamlash (qizil / sariq / yashil)
+            if (design) {
+                if (!haveStatic) { stat = bim::fem::solveStatic(md); haveStatic = true; }
+                rc = bim::fem::designRc(md, stat, seisEnv.empty() ? nullptr : &seisEnv, rp);
+                int g = 0, y = 0, r = 0;
+                std::size_t worst = 0;
+                for (std::size_t k = 0; k < rc.size(); ++k) {
+                    (rc[k].util > 1 ? r : rc[k].util > 0.8 ? y : g)++;
+                    if (rc[k].util > rc[worst].util) worst = k;
+                }
+                say("fem.msg.design", {std::to_string(g), std::to_string(y), std::to_string(r), seisEnv.empty() ? loc_.tr("fem.msg.design_static") : loc_.tr("fem.msg.design_seis")});
+                // tavsiya: qizil ustun/rigel uchun eng kichik kesim (5 sm qadam)
+                auto suggest = [&](const bim::fem::RcCheck& c) {
+                    double b = c.b, h = c.h;
+                    for (int it = 0; it < 60; ++it) {
+                        if (bim::fem::rcSection(c.column, b, h, c.N, c.My, c.Mz, c.Q, rp).util <= 0.8) return std::format("{:.0f}x{:.0f}", b * 100, h * 100);
+                        if (c.column) { b += 0.05; h += 0.05; } else h += 0.05;
+                    }
+                    return std::string("-");
+                };
+                if (!rc.empty() && rc[worst].util > 1) {
+                    const auto& c = rc[worst];
+                    say("fem.msg.design_worst", {std::to_string(md.beams[worst].id), loc_.tr(c.column ? "fem.kind.col" : "fem.kind.beam"),
+                                                 std::format("{:.0f}x{:.0f}", c.b * 100, c.h * 100), std::format("{:.2f}", c.util), suggest(c)});
+                }
+                if (sh) {
+                    auto* d = &wb.add(loc_.tr("fem.xl.design"));
+                    d->widths = {8, 10, 10, 10, 10, 10, 10, 10, 10, 8, 8, 12};
+                    d->add({xlsx::Cell::s("ID", 1), xlsx::Cell::s(loc_.tr("fem.xl.kind"), 1), xlsx::Cell::s("b×h, sm", 1), xlsx::Cell::s("N, kN", 1), xlsx::Cell::s("My, kN·m", 1),
+                            xlsx::Cell::s("Mz, kN·m", 1), xlsx::Cell::s("Q, kN", 1), xlsx::Cell::s("As, sm²", 1), xlsx::Cell::s("μ, %", 1), xlsx::Cell::s("u", 1),
+                            xlsx::Cell::s(loc_.tr("fem.xl.status"), 1), xlsx::Cell::s(loc_.tr("fem.xl.suggest"), 1)});
+                    for (std::size_t k = 0; k < rc.size(); ++k) {
+                        const auto& c = rc[k];
+                        d->add({xlsx::Cell::n(md.beams[k].id, 0), xlsx::Cell::s(loc_.tr(c.column ? "fem.kind.col" : "fem.kind.beam")),
+                                xlsx::Cell::s(std::format("{:.0f}x{:.0f}", c.b * 100, c.h * 100)), xlsx::Cell::n(c.N, 1), xlsx::Cell::n(c.My, 1), xlsx::Cell::n(c.Mz, 1),
+                                xlsx::Cell::n(c.Q, 1), xlsx::Cell::n(c.asReq, 2), xlsx::Cell::n(c.rho, 2), xlsx::Cell::n(c.util, 2),
+                                xlsx::Cell::s(loc_.tr(c.util > 1 ? "fem.st.red" : c.util > 0.8 ? "fem.st.yellow" : "fem.st.green")),
+                                xlsx::Cell::s(c.util > 1 ? suggest(c) : std::string())});
+                    }
                 }
             }
         } catch (const std::runtime_error& e) {
@@ -505,6 +559,10 @@ bool Interpreter::dispatchSeismic(const std::string& cmd, const Args& a) {
                 const auto& p2 = md.nodes[static_cast<std::size_t>(md.index(b.n2))].p;
                 auto e = std::make_unique<LineEntity>(p1, p2);
                 e->setLayer(std::abs(p2.z - p1.z) > 0.5 * (p2 - p1).length() ? "FEM_USTUN" : "FEM_RIGEL");
+                if (!rc.empty()) {   // o'lchamlash natijasi: 3 yashil, 2 sariq, 1 qizil
+                    const double u = rc[static_cast<std::size_t>(&b - md.beams.data())].util;
+                    e->setColor(u > 1 ? 1 : u > 0.8 ? 2 : 3);
+                }
                 auto c = std::make_unique<AddEntityCommand>(std::move(e), cmd);
                 adds.push_back(c.get());
                 comp->add(std::move(c));

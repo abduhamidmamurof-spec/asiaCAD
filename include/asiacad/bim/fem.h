@@ -9,6 +9,7 @@
 //   BEAM id n1 n2 mat sec [VX VY VZ]  — lokal z o'qi uchun yo'naltiruvchi vektor (berilmasa avtomatik)
 //   MASS node m                       — t (gorizontal X, Y va vertikal Z)
 //   LOAD node fx fy fz [mx my mz]     — kN, kN·m
+//   QLOAD beam qx qy qz               — sterjen bo'ylab tekis taqsimlangan yuk, global o'qlarda, kN/m
 #include <asiacad/core/math.h>
 
 #include <array>
@@ -31,6 +32,7 @@ struct Model {
     std::vector<Beam> beams;
     std::map<int, double> mass;                        // tugun → t
     std::map<int, std::array<double, 6>> loads;        // tugun → kN, kN·m
+    std::map<int, Vec3> qloads;                        // sterjen id → taqsimlangan yuk (global), kN/m
     int index(int nodeId) const;                       // nodes ichidagi o'rni (-1 — yo'q)
 };
 
@@ -51,11 +53,44 @@ struct ModeShape { double T = 0, omega = 0; std::array<double, 3> mpf{}; std::ar
 std::vector<ModeShape> solveModes(const Model& m, int count);
 
 // Javob spektri: Sa(T) (m/s²) funksiyasi; dir 0 — X, 1 — Y. CQC (zeta). Natija: tugun siljishlari (m), poydevor kesuvchi kuchi (kN)
-struct SpectrumResult { std::vector<std::array<double, 6>> disp; double baseShear = 0; double roof = 0; };
+struct SpectrumResult {
+    std::vector<std::array<double, 6>> disp;
+    double baseShear = 0, roof = 0;
+    std::vector<BeamForces> forces;   // element uch kuchlari (CQC, mutlaq qiymatlar), beams tartibida
+};
 SpectrumResult responseSpectrum(const Model& m, const std::vector<ModeShape>& modes, const std::function<double(double)>& sa, int dir, double zeta = 0.05);
+
+// Sterjen bo'ylab ichki kuchlar (lokal): x = 0..L da N, Vy, Vz, T, My, Mz (uch kuchlari va taqsimlangan yukdan)
+std::array<double, 6> internalForces(const Model& m, std::size_t beamIndex, const BeamForces& f, double x);
+double beamLength(const Model& m, std::size_t beamIndex);
+
+// Temirbeton oldindan o'lchamlash (ShNQ 2.03.01 / SP 63.13330 soddalashtirilgan): ustun — N + qiyshiq egilish (simmetrik armatura,
+// chiziqli o'zaro ta'sir), rigel — egilish (αm ≤ αR, kerakli As, μ ≤ 2,5%) va kesuvchi kuch (Q ≤ 0,3·Rb·b·h0).
+// Kesim to'g'ri to'rtburchak deb olinadi: b = √(12·Iz/A), h = √(12·Iy/A).
+struct RcParams {
+    double Rb = 14500, Rbt = 1050;     // kPa (B25)
+    double Rs = 435000;                // kPa (A500C)
+    double cover = 0.05;               // armatura markazigacha, m
+    double rhoMax = 0.04;              // ustunda eng ko'p armatura ulushi
+    double alphaR = 0.39;              // rigel: chegaraviy nisbiy balandlik bo'yicha
+};
+bool rcConcreteClass(const std::string& cls, RcParams& p);   // "B20".."B60"
+struct RcCheck {
+    bool column = false;
+    double b = 0, h = 0, L = 0;
+    double N = 0, My = 0, Mz = 0, Q = 0;   // hisobiy (kN, kN·m) — eng noqulay
+    double asReq = 0;                      // kerakli armatura, sm² (ustun — jami, rigel — cho'zilgan zona)
+    double rho = 0;                        // % (b·h0 yoki b·h ga)
+    double util = 0;                       // foydalanish koeffitsienti (>1 — kesim yetmaydi)
+};
+// Bitta kesim (kuchlar berilgan): N > 0 — siqilish
+RcCheck rcSection(bool column, double b, double h, double N, double My, double Mz, double Q, const RcParams& p);
+// static — doimiy yuk, seis (bo'lsa) — spektral kuchlar (mutlaq): kombinatsiya static ± seis
+std::vector<RcCheck> designRc(const Model& m, const StaticResult& st, const std::vector<BeamForces>* seis, const RcParams& p);
 
 // Ramka generatori: o'qlar oraliqlari (X, Y), qavatlar, balandlik; ustun b×h, rigel b×h, beton E; qavat massasi (t/m²)
 Model frameGenerator(const std::vector<double>& dx, const std::vector<double>& dy, int floors, double h, double colB, double colH, double beamB,
-                     double beamH, double E, double massPerArea, double gravityPerArea);
+                     double beamH, double E, double massPerArea, double gravityPerArea, bool lineLoads = false);
+// lineLoads — og'irlik yuki rigellarga taqsimlangan (QLOAD, har panel yukining yarmi X, yarmi Y rigellariga), aks holda tugunlarga
 
 }  // namespace asiacad::bim::fem

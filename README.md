@@ -845,6 +845,14 @@ Normaga mos kelmagan elementlar 3D da qizil (xato) yoki sariq (ogohlantirish) bo
 - Seysmika: Lot-16 spektri (RP=475/1000/2475/5000), `PGA=` bilan masshtab, `R=` kamaytirish; samarali massa ≥ 90% tekshiruvi (QMQ 2.01.03-19).
 - `.fem` matn formati: `NODE id x y z [FIX=111111]`, `MAT id E G`, `SEC id A Iy Iz J`, `BEAM id n1 n2 mat sec`, `MASS n t`, `LOAD n fx fy fz [mx my mz]` (kN, m, t).
 - Rama generatori: `FEM GEN=6x3;6x2 FLOORS=9 H=3.3 COL=0.4x0.4 BEAM=0.3x0.6 Q=1 G=10 DRAW XLSX=natija.xlsx`.
+- Taqsimlangan yuk: `QLOAD sterjen qx qy qz` (kN/m, global) — ekvivalent tugun yuklari, uch kuchlari va oraliq momenti to'g'ri
+  (qistirilgan rigel: tayanchda qL²/12, o'rtada qL²/24 — testda tekshiriladi). Spektral hisob element kuchlarini ham beradi (CQC).
+- **Oldindan o'lchamlash (v0.37): `FEM … DESIGN [CONC=B25] [RS=435]`** — temirbeton ustun va rigellar (ShNQ 2.03.01 / SP 63.13330
+  soddalashtirilgan): ustun — N + ikki tekislikda egilish, simmetrik armatura, kerakli μ (0,4–4%); rigel — αm ≤ αR, kerakli As,
+  μ ≤ 2,5%, Q ≤ 0,3·Rb·b·h0. Kuchlar — doimiy yuk ± spektral (X/Y dan eng kattasi). Natija: yashil (u ≤ 0,8) / sariq / qizil
+  (u > 1), eng zaif element va tavsiya etilgan kesim (5 sm qadam); `DRAW` — sterjenlar rangida, `XLSX` — «O'lchamlash» varag'i
+  (b×h, N, My, Mz, Q, As, μ, u, holat, tavsiya). `GEN` bilan `DESIGN` — plita yuki rigellarga taqsimlanadi (panelning yarmi X,
+  yarmi Y rigellariga). Bu dastlabki tanlov; ishchi loyiha armaturasi — KJ moduli va SCAD/ETABS tekshiruvi bilan.
 - Tekshiruv misollari (`fem_verification` testi): konsol PL³/3EI, o'q PL/EA, buralish TL/GJ, konsol+massa ω=√(3EI/mL³),
   2 qavatli shear-bino (analitik ω, farq < 1,5% — ustunlarning o'q deformatsiyasi), spektral V = M_eff·Sa.
 

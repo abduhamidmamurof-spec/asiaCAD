@@ -2,6 +2,7 @@
 #include <asiacad/bim/fem.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <format>
 #include <functional>
@@ -63,8 +64,16 @@ Model parseModel(const std::string& text) {
             ls >> f[3] >> f[4] >> f[5];
             auto& L = m.loads[n];
             for (int i = 0; i < 6; ++i) L[static_cast<std::size_t>(i)] += f[static_cast<std::size_t>(i)];
+        } else if (k == "QLOAD") {
+            int id;
+            Vec3 q;
+            if (!(ls >> id >> q.x >> q.y >> q.z)) throw bad();
+            auto& Q = m.qloads[id];
+            Q = Q + q;
         } else throw bad();
     }
+    for (const auto& [id, q] : m.qloads)
+        if (std::none_of(m.beams.begin(), m.beams.end(), [&](const Beam& b) { return b.id == id; })) throw std::runtime_error("fem: qload " + std::to_string(id));
     for (const auto& b : m.beams)
         if (m.index(b.n1) < 0 || m.index(b.n2) < 0 || !m.mats.count(b.mat) || !m.secs.count(b.sec)) throw std::runtime_error("fem: beam " + std::to_string(b.id));
     return m;
@@ -86,6 +95,7 @@ std::string writeModel(const Model& m) {
     for (const auto& b : m.beams) o << "BEAM " << b.id << ' ' << b.n1 << ' ' << b.n2 << ' ' << b.mat << ' ' << b.sec << '\n';
     for (const auto& [n, v] : m.mass) o << "MASS " << n << ' ' << v << '\n';
     for (const auto& [n, f] : m.loads) o << "LOAD " << n << ' ' << f[0] << ' ' << f[1] << ' ' << f[2] << ' ' << f[3] << ' ' << f[4] << ' ' << f[5] << '\n';
+    for (const auto& [b, q] : m.qloads) o << "QLOAD " << b << ' ' << q.x << ' ' << q.y << ' ' << q.z << '\n';
     return o.str();
 }
 
@@ -290,6 +300,45 @@ std::vector<std::array<double, 6>> expand(const Model& m, const Assembled& A, co
         }
     return d;
 }
+// Taqsimlangan yukning lokal qiymati va ekvivalent tugun yuklari (lokal, sterjenga qo'yilgan tashqi kuch sifatida)
+Vec3 localQ(const Model& m, const Beam& b, const Mat3& R) {
+    auto it = m.qloads.find(b.id);
+    if (it == m.qloads.end()) return {0, 0, 0};
+    const Vec3& q = it->second;
+    return {R[0][0] * q.x + R[0][1] * q.y + R[0][2] * q.z, R[1][0] * q.x + R[1][1] * q.y + R[1][2] * q.z, R[2][0] * q.x + R[2][1] * q.y + R[2][2] * q.z};
+}
+std::array<double, 12> equivalentLoads(const Vec3& ql, double L) {
+    std::array<double, 12> e{};
+    e[0] = e[6] = ql.x * L / 2;
+    e[1] = e[7] = ql.y * L / 2;
+    e[2] = e[8] = ql.z * L / 2;
+    e[5] = ql.y * L * L / 12;
+    e[11] = -ql.y * L * L / 12;
+    e[4] = -ql.z * L * L / 12;
+    e[10] = ql.z * L * L / 12;
+    return e;
+}
+// global siljishlardan lokal uch kuchlari (k·u)
+BeamForces endForces(const Model& m, const Assembled& A, std::size_t bi, const std::vector<std::array<double, 6>>& disp) {
+    const auto& b = m.beams[bi];
+    const int i1 = m.index(b.n1), i2 = m.index(b.n2);
+    const Mat3& R = A.R[bi];
+    double ug[12], ul[12];
+    for (int d = 0; d < 6; ++d) { ug[d] = disp[static_cast<std::size_t>(i1)][static_cast<std::size_t>(d)]; ug[6 + d] = disp[static_cast<std::size_t>(i2)][static_cast<std::size_t>(d)]; }
+    for (int blk = 0; blk < 4; ++blk)
+        for (int i = 0; i < 3; ++i) {
+            double s = 0;
+            for (int j = 0; j < 3; ++j) s += R[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)] * ug[3 * blk + j];
+            ul[3 * blk + i] = s;
+        }
+    BeamForces bf;
+    for (int i = 0; i < 12; ++i) {
+        double s = 0;
+        for (int j = 0; j < 12; ++j) s += A.kl[bi][static_cast<std::size_t>(i)][static_cast<std::size_t>(j)] * ul[j];
+        bf.f[static_cast<std::size_t>(i)] = s;
+    }
+    return bf;
+}
 }  // namespace
 
 StaticResult solveStatic(const Model& m) {
@@ -300,6 +349,20 @@ StaticResult solveStatic(const Model& m) {
         if (i < 0) continue;
         for (int d = 0; d < 6; ++d)
             if (const int e = A.eq[static_cast<std::size_t>(i) * 6 + static_cast<std::size_t>(d)]; e >= 0) F[static_cast<std::size_t>(e)] += f[static_cast<std::size_t>(d)];
+    }
+    std::vector<std::array<double, 12>> eqL(m.beams.size(), std::array<double, 12>{});
+    for (std::size_t bi = 0; bi < m.beams.size(); ++bi) {
+        const Vec3 ql = localQ(m, m.beams[bi], A.R[bi]);
+        if (ql.length() == 0) continue;
+        eqL[bi] = equivalentLoads(ql, A.L[bi]);
+        const int nd[2] = {m.index(m.beams[bi].n1), m.index(m.beams[bi].n2)};
+        for (int blk = 0; blk < 4; ++blk)
+            for (int j = 0; j < 3; ++j) {
+                double g = 0;   // global = Rᵀ · lokal
+                for (int i = 0; i < 3; ++i) g += A.R[bi][static_cast<std::size_t>(i)][static_cast<std::size_t>(j)] * eqL[bi][static_cast<std::size_t>(3 * blk + i)];
+                const int e = A.eq[static_cast<std::size_t>(nd[blk / 2]) * 6 + static_cast<std::size_t>((blk % 2) * 3 + j)];
+                if (e >= 0) F[static_cast<std::size_t>(e)] += g;
+            }
     }
     Band K = A.K;
     K.factor();
@@ -314,20 +377,8 @@ StaticResult solveStatic(const Model& m) {
         const auto& b = m.beams[bi];
         const int i1 = m.index(b.n1), i2 = m.index(b.n2);
         const Mat3& R = A.R[bi];
-        double ug[12], ul[12];
-        for (int d = 0; d < 6; ++d) { ug[d] = r.disp[static_cast<std::size_t>(i1)][static_cast<std::size_t>(d)]; ug[6 + d] = r.disp[static_cast<std::size_t>(i2)][static_cast<std::size_t>(d)]; }
-        for (int blk = 0; blk < 4; ++blk)
-            for (int i = 0; i < 3; ++i) {
-                double s = 0;
-                for (int j = 0; j < 3; ++j) s += R[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)] * ug[3 * blk + j];
-                ul[3 * blk + i] = s;
-            }
-        BeamForces bf;
-        for (int i = 0; i < 12; ++i) {
-            double s = 0;
-            for (int j = 0; j < 12; ++j) s += A.kl[bi][static_cast<std::size_t>(i)][static_cast<std::size_t>(j)] * ul[j];
-            bf.f[static_cast<std::size_t>(i)] = s;
-        }
+        BeamForces bf = endForces(m, A, bi, r.disp);
+        for (int i = 0; i < 12; ++i) bf.f[static_cast<std::size_t>(i)] -= eqL[bi][static_cast<std::size_t>(i)];
         r.forces.push_back(bf);
         // global uch kuchlari → tugunlarga
         for (int blk = 0; blk < 4; ++blk)
@@ -492,6 +543,21 @@ SpectrumResult responseSpectrum(const Model& m, const std::vector<ModeShape>& mo
                 for (std::size_t j = 0; j < nm; ++j) s += rho(i, j) * u[i][n][static_cast<std::size_t>(d)] * u[j][n][static_cast<std::size_t>(d)];
             r.disp[n][static_cast<std::size_t>(d)] = std::sqrt(std::max(s, 0.0));
         }
+    // element kuchlari: har shakl uchun k·u, so'ng CQC (har komponent alohida)
+    {
+        const auto A = assemble(m);
+        std::vector<std::vector<BeamForces>> fk(nm);
+        for (std::size_t k = 0; k < nm; ++k)
+            for (std::size_t bi = 0; bi < m.beams.size(); ++bi) fk[k].push_back(endForces(m, A, bi, u[k]));
+        r.forces.assign(m.beams.size(), BeamForces{});
+        for (std::size_t bi = 0; bi < m.beams.size(); ++bi)
+            for (std::size_t c = 0; c < 12; ++c) {
+                double q = 0;
+                for (std::size_t i = 0; i < nm; ++i)
+                    for (std::size_t j = 0; j < nm; ++j) q += rho(i, j) * fk[i][bi].f[c] * fk[j][bi].f[c];
+                r.forces[bi].f[c] = std::sqrt(std::max(q, 0.0));
+            }
+    }
     double s = 0;
     for (std::size_t i = 0; i < nm; ++i)
         for (std::size_t j = 0; j < nm; ++j) s += rho(i, j) * V[i] * V[j];
@@ -500,8 +566,121 @@ SpectrumResult responseSpectrum(const Model& m, const std::vector<ModeShape>& mo
     return r;
 }
 
+double beamLength(const Model& m, std::size_t bi) {
+    const auto& b = m.beams[bi];
+    return (m.nodes[static_cast<std::size_t>(m.index(b.n2))].p - m.nodes[static_cast<std::size_t>(m.index(b.n1))].p).length();
+}
+
+std::array<double, 6> internalForces(const Model& m, std::size_t bi, const BeamForces& f, double x) {
+    const auto& b = m.beams[bi];
+    double L;
+    const Mat3 R = axes(m.nodes[static_cast<std::size_t>(m.index(b.n1))].p, m.nodes[static_cast<std::size_t>(m.index(b.n2))].p, b.vz, L);
+    const Vec3 q = localQ(m, b, R);
+    // chap bo'lak (0..x) muvozanati: f — 1-uchda tugundan sterjenga ta'sir; ichki kuch — kesimdagi (o'ng bo'lakdan chapga) ta'sir
+    std::array<double, 6> r{};
+    r[0] = -(f.f[0] + q.x * x);                       // N (cho'zilish +)
+    r[1] = f.f[1] + q.y * x;                          // Vy
+    r[2] = f.f[2] + q.z * x;                          // Vz
+    r[3] = -f.f[3];                                   // T
+    r[4] = f.f[4] + f.f[2] * x + q.z * x * x / 2;     // My
+    r[5] = -f.f[5] + f.f[1] * x + q.y * x * x / 2;    // Mz
+    return r;
+}
+
+bool rcConcreteClass(const std::string& cls, RcParams& p) {
+    static const std::map<std::string, std::pair<double, double>> t = {   // Rb, Rbt (MPa)
+        {"B15", {8.5, 0.75}}, {"B20", {11.5, 0.90}}, {"B25", {14.5, 1.05}}, {"B30", {17.0, 1.15}}, {"B35", {19.5, 1.30}},
+        {"B40", {22.0, 1.40}}, {"B45", {25.0, 1.50}}, {"B50", {27.5, 1.60}}, {"B55", {30.0, 1.70}}, {"B60", {33.0, 1.80}}};
+    std::string k;
+    for (char ch : cls) k += static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+    if (k.size() > 1 && (k[0] == 'C' || k[0] == 'V')) k[0] = 'B';   // kirill/lotin
+    auto it = t.find(k);
+    if (it == t.end()) return false;
+    p.Rb = it->second.first * 1000;
+    p.Rbt = it->second.second * 1000;
+    return true;
+}
+
+RcCheck rcSection(bool column, double b, double h, double N, double My, double Mz, double Q, const RcParams& p) {
+    RcCheck c;
+    c.column = column;
+    c.b = b;
+    c.h = h;
+    c.N = N;
+    c.My = My;
+    c.Mz = Mz;
+    c.Q = Q;
+    const double Nc = std::max(N, 0.0), Nt = std::max(-N, 0.0);
+    const double A = b * h;
+    if (column) {
+        // kerakli ρ (0,4%..ρmax): u(ρ) = N/Nu + My/Muy + Mz/Muz ≤ 1; foydalanish = ρ/2,5% (2,5% dan ko'p — iqtisodiy emas)
+        auto util = [&](double rho) {
+            const double As = rho * A;
+            const double Nu = p.Rb * A + p.Rs * As;
+            const double Muy = p.Rs * As / 2 * (h - 2 * p.cover) + 0.1 * p.Rb * A * h;   // + beton hissasi (taxminiy)
+            const double Muz = p.Rs * As / 2 * (b - 2 * p.cover) + 0.1 * p.Rb * A * b;
+            return Nc / Nu + My / Muy + Mz / Muz;
+        };
+        double rho = 0.004;
+        while (rho < p.rhoMax && util(rho) > 1) rho += 0.0005;
+        if (Nt > 0) rho = std::max(rho, Nt / (p.Rs * A));
+        if (util(std::min(rho, p.rhoMax)) > 1 || rho > p.rhoMax) {
+            c.util = std::max(1.01, util(p.rhoMax));
+            rho = p.rhoMax;
+        } else c.util = rho / 0.025;
+        c.rho = rho * 100;
+        c.asReq = rho * A * 1e4;
+    } else {
+        const double h0 = h - p.cover;
+        const double am = My / (p.Rb * b * h0 * h0);
+        double As = 0;
+        if (am < 0.5) As = p.Rb * b * h0 * (1 - std::sqrt(std::max(0.0, 1 - 2 * am))) / p.Rs;
+        else As = 1e9;
+        c.asReq = std::min(As, 1.0) * 1e4;
+        c.rho = std::min(As / (b * h0), 1.0) * 100;
+        c.util = std::max({am / p.alphaR, c.rho / 2.5, Q / (0.3 * p.Rb * b * h0)});
+    }
+    return c;
+}
+
+std::vector<RcCheck> designRc(const Model& m, const StaticResult& st, const std::vector<BeamForces>* seis, const RcParams& p) {
+    std::vector<RcCheck> out;
+    for (std::size_t bi = 0; bi < m.beams.size(); ++bi) {
+        const auto& b = m.beams[bi];
+        const auto& sec = m.secs.at(b.sec);
+        RcCheck c;
+        const Vec3 d = m.nodes[static_cast<std::size_t>(m.index(b.n2))].p - m.nodes[static_cast<std::size_t>(m.index(b.n1))].p;
+        c.L = d.length();
+        c.column = std::abs(d.z) > 0.7 * c.L;
+        c.b = std::sqrt(12 * sec.Iz / sec.A);
+        c.h = std::sqrt(12 * sec.Iy / sec.A);
+        // eng noqulay qiymatlar: 11 nuqta, statik ± seysmik (seysmik — uchlar orasida chiziqli)
+        double Nc = 0, Nt = 0, My = 0, Mz = 0, Q = 0;
+        for (int k = 0; k <= 10; ++k) {
+            const double x = c.L * k / 10.0;
+            const auto s = internalForces(m, bi, st.forces[bi], x);
+            std::array<double, 6> e{};
+            if (seis) {
+                const auto& f = (*seis)[bi].f;
+                const double t = k / 10.0;
+                for (int j = 0; j < 6; ++j) e[static_cast<std::size_t>(j)] = (1 - t) * f[static_cast<std::size_t>(j)] + t * f[static_cast<std::size_t>(6 + j)];
+            }
+            Nc = std::max(Nc, -s[0] + e[0]);
+            Nt = std::max(Nt, s[0] + e[0]);
+            My = std::max(My, std::abs(s[4]) + e[4]);
+            Mz = std::max(Mz, std::abs(s[5]) + e[5]);
+            Q = std::max({Q, std::abs(s[1]) + e[1], std::abs(s[2]) + e[2]});
+        }
+        RcCheck r = rcSection(c.column, c.b, c.h, Nc > Nt ? Nc : -Nt, My, Mz, Q, p);
+        r.L = c.L;
+        c = r;
+        out.push_back(c);
+    }
+    return out;
+}
+
 Model frameGenerator(const std::vector<double>& dx, const std::vector<double>& dy, int floors, double h, double colB, double colH, double beamB,
-                     double beamH, double E, double massPerArea, double gravityPerArea) {
+                     double beamH, double E, double massPerArea, double gravityPerArea, bool lineLoads) {
     Model m;
     m.mats[1] = {E, E / 2.4};
     auto rect = [](double b, double hh) {
@@ -532,7 +711,7 @@ Model frameGenerator(const std::vector<double>& dx, const std::vector<double>& d
                     const double tx = ((i > 0 ? X[static_cast<std::size_t>(i)] - X[static_cast<std::size_t>(i - 1)] : 0) + (i + 1 < nx ? X[static_cast<std::size_t>(i + 1)] - X[static_cast<std::size_t>(i)] : 0)) / 2;
                     const double ty = ((j > 0 ? Y[static_cast<std::size_t>(j)] - Y[static_cast<std::size_t>(j - 1)] : 0) + (j + 1 < ny ? Y[static_cast<std::size_t>(j + 1)] - Y[static_cast<std::size_t>(j)] : 0)) / 2;
                     m.mass[n.id] = massPerArea * tx * ty;
-                    if (gravityPerArea != 0) m.loads[n.id] = {0, 0, -gravityPerArea * tx * ty, 0, 0, 0};
+                    if (gravityPerArea != 0 && !lineLoads) m.loads[n.id] = {0, 0, -gravityPerArea * tx * ty, 0, 0, 0};
                 }
             }
     int bid = 1;
@@ -540,8 +719,17 @@ Model frameGenerator(const std::vector<double>& dx, const std::vector<double>& d
         for (int j = 0; j < ny; ++j)
             for (int i = 0; i < nx; ++i) {
                 m.beams.push_back({bid++, id(k - 1, j, i), id(k, j, i), 1, 1, {}});
-                if (i + 1 < nx) m.beams.push_back({bid++, id(k, j, i), id(k, j, i + 1), 1, 2, {}});
-                if (j + 1 < ny) m.beams.push_back({bid++, id(k, j, i), id(k, j + 1, i), 1, 2, {}});
+                // panel yuki: X rigeliga — qo'shni panellar Ly/4 dan, Y rigeliga — Lx/4 dan
+                auto Xs = [&](int q) { return X[static_cast<std::size_t>(q + 1)] - X[static_cast<std::size_t>(q)]; };
+                auto Ys = [&](int q) { return Y[static_cast<std::size_t>(q + 1)] - Y[static_cast<std::size_t>(q)]; };
+                if (i + 1 < nx) {
+                    if (lineLoads && gravityPerArea != 0) m.qloads[bid] = {0, 0, -gravityPerArea * ((j > 0 ? Ys(j - 1) : 0) + (j + 1 < ny ? Ys(j) : 0)) / 4};
+                    m.beams.push_back({bid++, id(k, j, i), id(k, j, i + 1), 1, 2, {}});
+                }
+                if (j + 1 < ny) {
+                    if (lineLoads && gravityPerArea != 0) m.qloads[bid] = {0, 0, -gravityPerArea * ((i > 0 ? Xs(i - 1) : 0) + (i + 1 < nx ? Xs(i) : 0)) / 4};
+                    m.beams.push_back({bid++, id(k, j, i), id(k, j + 1, i), 1, 2, {}});
+                }
             }
     return m;
 }
