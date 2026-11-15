@@ -12,7 +12,7 @@ Modullar, buyruqlar va versiyalar bo'yicha batafsil — `README.md`.
   - Xossalar paneli har menyuda: 3D da element tanlansa — xossalar, tuzatish, qo'shimcha detal (`apps/gui/prop_panel.*`).
   - Varaqlar (AutoCAD kabi): Boshlash · bir nechta chizma · menyular varaq bo'lib (`apps/gui/main_window_tabs.cpp`).
   - Menyularda Ctrl+Z / Ctrl+Y (`apps/gui/menu_history.h`).
-- Testlar: yadro — `157 test, 2513 tekshiruv, 0 xato` (Windows CI da ham 0 xato); GUI — `602 tekshiruv, 0 xato`.
+- Testlar: yadro — `174 test, 2755 tekshiruv, 0 xato` (Windows CI da ham 0 xato); GUI — `621 tekshiruv, 0 xato`.
 
 ## Yig'ish va testlar (Linux)
 
@@ -84,7 +84,7 @@ Tartib bilan, har biri alohida modul (ochilishda faqat chizma yadrosi yuklanadi)
    metraj (Excel); so'ng "inson nazorati" oynasi — tanlangan bo'lakning turini o'zgartirish, qolgani qayta chiziladi.
 3. 3D model tek buyruq bilan: qavat rejalari + kesimlardan avtomatik ko'tarish; yoqmagan joyni oddiy tahrir (tanlash → o'lcham/tur).
 4. ✅ (MVP, v0.34 `FACADE`) Fasad: rejadan fasad/ko'rinish, fasad elementlari (deraza, vitraj, panel, parapet, karniz), fasad paftasi va metraji.
-5. Render (fotorealistik) — foydalanuvchi talabi: 3ds Max + Corona va V-Ray, Lumion / D5 / Twinmotion, Unreal (Blender emas).
+5. (3ds Max skripti ✅ v0.37 `EXPORT3D MAX=`: Corona/V-Ray materiallar, quyosh, kameralar, aktivlar jadvali bo'yicha proksi; D5/glTF ✅ v0.34) Render (fotorealistik) — foydalanuvchi talabi: 3ds Max + Corona va V-Ray, Lumion / D5 / Twinmotion, Unreal (Blender emas).
    "Renderga yuborish" oynasi: sahna eksporti (OBJ+MTL / Collada / glTF) standart material nomlari bilan, kamera, quyosh (Toshkent,
    sana/soat); 3ds Max uchun MaxScript — Corona/V-Ray fizik materiallar, CoronaSun/Sky yoki VRaySun, kamera va 3dsmaxcmd bilan
    avtomatik render; daraxt/odam/avto joylari genplandan.
@@ -95,5 +95,5 @@ Tartib bilan, har biri alohida modul (ochilishda faqat chizma yadrosi yuklanadi)
 5b. Video (alohida mavzu, foydalanuvchi: "render va Lumion — boshqa mavzular"): Lumion sifatidagi animatsiya/video — kamera yo'li,
    o'simlik/odam/avto, yengil (og'ir emas); Lumion/D5/Twinmotion ga eksport yoki o'z yengil real-vaqt ko'rinishi.
 6. Arxitektura: aqlli devor / eshik / deraza, xona maydonlari (brutto/netto, ijaraga beriladigan), kesim va ko'rinish, pafta + PDF.
-7. (yadro ✅ v0.35 `FEM`: sterjen, statik/modal/spektral CQC, tekshiruv testlari; qobiq, GUI va o'lchamlash — keyin) Statika: o'z 3D FEM yechuvchisi (sterjen + qobiq), modal + spektral (ShNQ 2.01.03-19), oldindan o'lchamlash (ustun/perda/rigel/plita,
+7. (yadro ✅ v0.35 `FEM`: sterjen, statik/modal/spektral CQC, tekshiruv testlari; ✅ v0.37 `QLOAD`, spektral element kuchlari, `FEM DESIGN` — temirbeton oldindan o'lchamlash qizil-yashil; qobiq va GUI — keyin) Statika: o'z 3D FEM yechuvchisi (sterjen + qobiq), modal + spektral (ShNQ 2.01.03-19), oldindan o'lchamlash (ustun/perda/rigel/plita,
    qizil-yashil), temir-beton loyihalash → armatura paftasi, SCAD/ETABS bilan solishtiruvchi tekshiruv misollari (sertifikat uchun).
