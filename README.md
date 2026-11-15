@@ -827,6 +827,15 @@ Normaga mos kelmagan elementlar 3D da qizil (xato) yoki sariq (ogohlantirish) bo
   `TREE;Chinor_12m.max;12` kabi qatorlar yozilsa (Chaos Cosmos, Maxtree, Laubwerk, AXYZ proksi saqlangan .max fayllar), skript ularni
   har marker joyiga nusxa (instance) qilib qo'yadi, balandlik bo'yicha masshtablaydi va buradi; jadval bo'sh bo'lsa — nomida
   balandligi bor nuqtalar (`AC_TREE_12_h9.5`). Avtomatik render: `3dsmaxcmd sahna.max -camera:AC_Kamera_Dron -o:render.png`.
+- **`UNREAL=sahna.py [GEO=lat,lon] [LABELS=qatlam]` — Unreal Engine 5 (v0.37)**: yonida `sahna.gltf` va `sahna_aktivlar.csv`.
+  Skript (Editor → Tools → Execute Python Script): glTF importi, AC_* materiallar (bitta asosiy materialdan instansiyalar, shisha —
+  shaffof), quyosh (DATE/TIME, Toshkent) + SkyAtmosphere + SkyLight + hajmiy bulutlar + balandlik tumani + post-process, ikki
+  CineCamera (odam ko'zi, dron). Daraxt/buta/odam/avto — aktivlar jadvalidagi Fab / Quixel Megascans mesh yo'llari bo'yicha
+  (`TREE;/Game/…/SM_PlaneTree_01.SM_PlaneTree_01;12`; bir turda bir nechta qator — navbat bilan), har tur bitta Instanced Static
+  Mesh aktorida (minglab daraxt yengil). `LABELS=LOT` — nomida LOT bo'lgan qatlamlardagi matnlar sahnada lot yorliqlari.
+  Cesium for Unreal plagini bo'lsa — georeferens (`GEO=`) va skript boshidagi `GOOGLE_3D_TILES_KEY` berilsa atrofga Google
+  fotorealistik 3D shahar plitalari (haqiqiy Toshkent). Koordinatalar: UE = (x, −y, z)·100 sm.
+- Menyu `Arxitektura → Render → Unreal Engine 5 ga yuborish`.
 - Menyu `Arxitektura → Render → Renderga yuborish (3ds Max)`: render dasturi tanlanadi; yuklangan IFC bo'lsa — `SHELL` bilan.
 
 ## Fasad (v0.34)

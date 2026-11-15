@@ -179,7 +179,7 @@ const char* commandSyntax(const std::string& c) {
         {"VOLUME", "EG=sel FG=sel|Z=z|BALANCE [IX=‰] [IY=‰] [BASE=x,y] [BOUND=id] [CELL=m]"},
         {"SETPROP", "sel KEY=value [KEY=value ...]"},
         {"GRIDAXES", "X=6,6,7.5 Y=8x3 [O=x,y] [ANG=°] [LET=LAT|CYR] [SWAP] [START=1,A] [EXT=m] [R=m] [H=m] [NODIM] [ONE] | RAD=r0;dr… ANGS=a0;da…"},
-        {"EXPORT3D", "file.gltf|file.obj [IFC=file.ifc [SHELL] [IFCCOLORS]] [BUILDING] [GENPLAN] [NOMARKERS] [DATE=2026-06-21] [TIME=16:00] [MAX=scene.ms [RENDERER=CORONA|VRAY|PHYSICAL]]"},
+        {"EXPORT3D", "file.gltf|file.obj [IFC=file.ifc [SHELL] [IFCCOLORS]] [BUILDING] [GENPLAN] [NOMARKERS] [DATE=2026-06-21] [TIME=16:00] [MAX=scene.ms [RENDERER=CORONA|VRAY|PHYSICAL]] [UNREAL=scene.py [GEO=lat,lon] [LABELS=layer]]"},
         {"FEM", "file.fem | GEN=6x3;6x2 [FLOORS=5] [H=3.3] [COL=0.4x0.4] [BEAM=0.3x0.6] [E=3e7] [Q=1] [G=10] [MODES=6] [RP=475] [PGA=g] [R=1] [DIR=XY] [DESIGN [CONC=B25] [RS=435]] [DRAW] [SAVE=f.fem] [XLSX=f]"},
         {"FACADE", "IFC=file.ifc | FLOORS=n [H=3.3] [Z0=0] [LAYER=name] [TYPE=CURTAIN|BAND|PUNCHED] [MODULE=1.5] [SPANDREL=m] [OFFSET=m] [WIN=1.5x1.8] [SILL=0.9] [ELEV] [XLSX=f]"},
         {"GENPLAN", "[MAP=layer:ROAD|SIDEWALK|GREEN|PARKING|BUILDING|PLAYGROUND|RAMP|PATH|NONE,…] [CURB=15;8] [STALL=2.5x5] [NOCURB] [NOPARK] [LAYERS] [XLSX=f]"},

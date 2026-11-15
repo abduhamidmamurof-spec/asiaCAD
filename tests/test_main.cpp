@@ -5087,6 +5087,41 @@ TEST(scene_export_maxscript_corona_vray) {
     CHECK(out.find("3ds Max") != std::string::npos);
 }
 
+TEST(scene_export_unreal_script) {
+    using namespace bim;
+    Scene sc;
+    addPrism(sc, "AC_Beton", {{0, 0, 0}, {20, 0, 0}, {20, 10, 0}, {0, 10, 0}}, {}, 0, 9);
+    addPrism(sc, "AC_Shisha", {{0, -0.1, 3}, {20, -0.1, 3}, {20, 0, 3}, {0, 0, 3}}, {}, 3, 6);
+    sc.markers.push_back({"TREE", {5, -8, 0}, 9.5, 30});
+    sc.labels.push_back({"27-LOT", {10, 5, 0}});
+    centerScene(sc);
+    const auto dir = std::filesystem::temp_directory_path() / "asiacad_ue_test";
+    std::filesystem::create_directories(dir);
+    auto read = [](const std::filesystem::path& p) { std::ifstream f(p); return std::string((std::istreambuf_iterator<char>(f)), {}); };
+    UnrealOptions o;
+    o.gltfFile = "s.gltf";
+    o.assetsCsv = "s_aktivlar.csv";
+    o.sunAzimuthDeg = 180;   // janub: yorug'lik shimolga (UE −Y) — yaw −90
+    o.sunElevationDeg = 40;
+    writeUnrealScript(sc, (dir / "s.py").string(), o);
+    const auto u = read(dir / "s.py");
+    CHECK(u.find("import unreal") != std::string::npos && u.find("AssetImportTask") != std::string::npos);
+    CHECK(u.find("\"AC_Shisha\": (") != std::string::npos && u.find("BLEND_TRANSLUCENT") != std::string::npos);
+    CHECK(u.find("unreal.Rotator(0, -40.0, 270.0)") != std::string::npos);
+    CHECK(u.find("(\"TREE\", -500.0, 1295.0, ") != std::string::npos);   // markaz (10; 4,95): x=5−10, y=−8−4,95 → UE (−500, +1295) sm
+    CHECK(u.find("(\"27-LOT\", 0.0, -5.0, ") != std::string::npos);
+    CHECK(u.find("VolumetricCloud") != std::string::npos && u.find("CesiumGeoreference") != std::string::npos && u.find("AC_Kamera_Dron") != std::string::npos);
+    // CLI: yorliqlar chizmadagi matnlardan (qatlam bo'yicha)
+    const auto py = (dir / "sahna_ue.py").string();
+    std::filesystem::remove(dir / "sahna_ue_aktivlar.csv");
+    const auto out = runScript("uz", {"LAYER Gazon", "PLINE 0,0 60,0 60,40 0,40 C", "CHPROP ALL LAYER=Gazon", "LAYER LOT_NOMLARI", "TEXT 30,20 3 27-LOT",
+                                      "CHPROP LAST LAYER=LOT_NOMLARI", "EXPORT3D " + (dir / "a.gltf").string() + " GENPLAN UNREAL=" + py + " LABELS=lot GEO=41.35,69.33"});
+    CHECK(out.find("yorliqlar 1") != std::string::npos);
+    CHECK(std::filesystem::exists(dir / "sahna_ue.gltf") && std::filesystem::exists(dir / "sahna_ue_aktivlar.csv"));
+    const auto t = read(py);
+    CHECK(t.find("GEO_LAT, GEO_LON, GEO_ALT = 41.350000, 69.330000") != std::string::npos && t.find("\"27-LOT\"") != std::string::npos);
+}
+
 TEST(genplan_zones_curbs_parking) {
     using namespace civil;
     CHECK(gpClassifyLayer("VP-H-OZELENENIE", gpDefaultRules()) == GpZone::Green);

@@ -34,9 +34,15 @@ struct SceneMarker {
     double height = 0, rotDeg = 0;
 };
 
+struct SceneLabel {               // Unreal: lot/bino yorliqlari (chizmadagi matnlardan)
+    std::string text;
+    Vec3 p;
+};
+
 struct Scene {
     std::vector<SceneMesh> meshes;        // material bo'yicha bittadan
     std::vector<SceneMarker> markers;
+    std::vector<SceneLabel> labels;
     Vec3 origin{0, 0, 0};                 // eksportda ayiriladi (katta koordinatalar render dasturlarida titraydi)
     void add(const std::string& material, const std::array<Vec3, 3>& t);
     std::size_t triangleCount() const;
@@ -82,6 +88,23 @@ struct MaxScriptOptions {
 };
 bool maxRendererFromKey(const std::string& key, MaxRenderer& out);
 void writeMaxScript(const Scene& s, const std::string& msPath, const MaxScriptOptions& o);
+
+// Unreal Engine 5 uchun Python skripti (Editor: Tools → Execute Python Script): glTF importi (Interchange), AC_* materiallar —
+// bitta asosiy materialdan instansiyalar (rang, g'adir-budurlik, metall, shisha — shaffof), SunSky (Toshkent, sana/soat),
+// osmon atmosferasi, hajmiy bulutlar, balandlik tumani, post-process; ikki CineCamera (odam ko'zi, dron); markerlar o'rniga
+// aktivlar jadvalidagi (kind;/Game/... mesh yo'li;balandlik) Static Mesh lar — har tur bitta ISM (instanced) aktorida;
+// yorliqlar — TextRender aktorlari (lot nomlari); Cesium bo'lsa — georeferens (GEO=lat,lon) va Google 3D shahar plitalari.
+// Koordinatalar: UE = (x, −y, z) · 100 sm (glTF importi bilan bir xil).
+struct UnrealOptions {
+    std::string gltfFile;             // skript yonidagi glTF (nisbiy nom)
+    std::string assetsCsv;            // kind;/Game/…/SM_Tree.SM_Tree;balandlik_m
+    double sunAzimuthDeg = 220, sunElevationDeg = 35;
+    double lat = 41.3111, lon = 69.2797;   // Toshkent (Cesium georeferensi va SunSky)
+    int year = 2026, month = 6, day = 21;
+    double hour = 16;
+    double originAltitude = 450;           // m — dengiz sathidan (Cesium uchun)
+};
+void writeUnrealScript(const Scene& s, const std::string& pyPath, const UnrealOptions& o);
 
 // Quyosh holati (NOAA soddalashtirilgan): kenglik/uzunlik (°), mahalliy vaqt, UTC siljishi → azimut (shimoldan, soat yo'nalishi), balandlik (°)
 struct SunPos { double azimuthDeg = 0, elevationDeg = 0; };

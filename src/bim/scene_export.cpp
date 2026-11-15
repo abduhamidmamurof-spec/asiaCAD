@@ -504,6 +504,225 @@ void writeMaxScript(const Scene& s, const std::string& msPath, const MaxScriptOp
     if (!f) throw Error("export.err.write", {msPath});
 }
 
+void writeUnrealScript(const Scene& s, const std::string& pyPath, const UnrealOptions& o) {
+    std::ofstream f(pyPath, std::ios::binary);
+    if (!f) throw Error("export.err.write", {pyPath});
+    auto esc = [](const std::string& t) {
+        std::string r;
+        for (char ch : t) {
+            if (ch == '\\' || ch == '"') r += '\\';
+            if (ch == '\n' || ch == '\r') { r += ' '; continue; }
+            r += ch;
+        }
+        return r;
+    };
+    double x0 = 1e300, y0 = 1e300, z0 = 1e300, x1 = -1e300, y1 = -1e300, z1 = -1e300;
+    for (const auto& mm : s.meshes)
+        for (const auto& t : mm.tris)
+            for (const auto& p : t) {
+                x0 = std::min(x0, p.x - s.origin.x); x1 = std::max(x1, p.x - s.origin.x);
+                y0 = std::min(y0, p.y - s.origin.y); y1 = std::max(y1, p.y - s.origin.y);
+                z0 = std::min(z0, p.z - s.origin.z); z1 = std::max(z1, p.z - s.origin.z);
+            }
+    if (x0 > x1) { x0 = y0 = z0 = 0; x1 = y1 = z1 = 10; }
+    const double cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, span = std::max({x1 - x0, y1 - y0, 10.0});
+    // UE (sm): X = x, Y = −y, Z = z
+    auto ue = [](double x, double y, double z) { return std::format("unreal.Vector({:.1f}, {:.1f}, {:.1f})", x * 100, -y * 100, z * 100); };
+    f << "# -*- coding: utf-8 -*-\n"
+      << "# AsiaCAD -> Unreal Engine 5 sahna skripti. Ishga tushirish: Unreal Editor -> Tools -> Execute Python Script\n"
+      << "# (Python Editor Script Plugin yoqilgan bo'lsin). Skript yonida: glTF modeli va aktivlar jadvali (CSV).\n"
+      << "# Boshlanish nuqtasi (asl koordinatalar): " << std::format("{:.3f} {:.3f} {:.3f}", s.origin.x, s.origin.y, s.origin.z) << "\n"
+      << "import os, csv, math\nimport unreal\n\n"
+      << "DIR = os.path.dirname(os.path.abspath(__file__))\n"
+      << "GLTF = os.path.join(DIR, \"" << esc(o.gltfFile) << "\")\n"
+      << "ASSETS_CSV = os.path.join(DIR, \"" << esc(o.assetsCsv) << "\")\n"
+      << "DEST = \"/Game/AsiaCAD\"\n"
+      << std::format("GEO_LAT, GEO_LON, GEO_ALT = {:.6f}, {:.6f}, {:.1f}   # Cesium georeferensi (loyiha boshlanish nuqtasi)\n", o.lat, o.lon, o.originAltitude)
+      << std::format("YEAR, MONTH, DAY, HOUR = {}, {}, {}, {:.2f}\n", o.year, o.month, o.day, o.hour)
+      << "GOOGLE_3D_TILES_KEY = \"\"   # Google Map Tiles API kaliti — bo'lsa atrofga haqiqiy shahar (Cesium for Unreal plagini kerak)\n\n"
+      << "eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)\n"
+      << "at = unreal.AssetToolsHelpers.get_asset_tools()\n"
+      << "mel = unreal.MaterialEditingLibrary\n"
+      << "eal = unreal.EditorAssetLibrary\n\n"
+      << "def spawn(cls, loc, rot=unreal.Rotator(0, 0, 0), label=None):\n"
+      << "    a = eas.spawn_actor_from_class(cls, loc, rot)\n"
+      << "    if a and label: a.set_actor_label(label)\n"
+      << "    return a\n\n";
+    // asosiy material: BaseColor, Roughness, Metallic, Opacity parametrlari
+    f << "# 1) Asosiy material (bir marta yaratiladi)\n"
+         "def master(name, translucent):\n"
+         "    path = DEST + \"/Materials/\" + name\n"
+         "    if eal.does_asset_exist(path): return eal.load_asset(path)\n"
+         "    m = at.create_asset(name, DEST + \"/Materials\", unreal.Material, unreal.MaterialFactoryNew())\n"
+         "    bc = mel.create_material_expression(m, unreal.MaterialExpressionVectorParameter, -400, 0); bc.set_editor_property(\"parameter_name\", \"BaseColor\")\n"
+         "    ro = mel.create_material_expression(m, unreal.MaterialExpressionScalarParameter, -400, 200); ro.set_editor_property(\"parameter_name\", \"Roughness\")\n"
+         "    me = mel.create_material_expression(m, unreal.MaterialExpressionScalarParameter, -400, 300); me.set_editor_property(\"parameter_name\", \"Metallic\")\n"
+         "    mel.connect_material_property(bc, \"\", unreal.MaterialProperty.MP_BASE_COLOR)\n"
+         "    mel.connect_material_property(ro, \"\", unreal.MaterialProperty.MP_ROUGHNESS)\n"
+         "    mel.connect_material_property(me, \"\", unreal.MaterialProperty.MP_METALLIC)\n"
+         "    if translucent:\n"
+         "        m.set_editor_property(\"blend_mode\", unreal.BlendMode.BLEND_TRANSLUCENT)\n"
+         "        m.set_editor_property(\"translucency_lighting_mode\", unreal.TranslucencyLightingMode.TLM_SURFACE_PER_PIXEL_LIGHTING)\n"
+         "        op = mel.create_material_expression(m, unreal.MaterialExpressionScalarParameter, -400, 400); op.set_editor_property(\"parameter_name\", \"Opacity\")\n"
+         "        mel.connect_material_property(op, \"\", unreal.MaterialProperty.MP_OPACITY)\n"
+         "    mel.recompile_material(m)\n"
+         "    return m\n\n"
+         "M_OPAQUE = master(\"M_AC_Asosiy\", False)\n"
+         "M_GLASS = master(\"M_AC_Shisha\", True)\n\n"
+         "def inst(name, r, g, b, rough, metal, opac):\n"
+         "    path = DEST + \"/Materials/\" + name\n"
+         "    mi = eal.load_asset(path) if eal.does_asset_exist(path) else at.create_asset(name, DEST + \"/Materials\", unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())\n"
+         "    mel.set_material_instance_parent(mi, M_GLASS if opac < 0.99 else M_OPAQUE)\n"
+         "    mel.set_material_instance_vector_parameter_value(mi, \"BaseColor\", unreal.LinearColor(r, g, b, 1))\n"
+         "    mel.set_material_instance_scalar_parameter_value(mi, \"Roughness\", rough)\n"
+         "    mel.set_material_instance_scalar_parameter_value(mi, \"Metallic\", metal)\n"
+         "    if opac < 0.99: mel.set_material_instance_scalar_parameter_value(mi, \"Opacity\", opac)\n"
+         "    return mi\n\n"
+         "MATS = {\n";
+    std::vector<std::string> seen;
+    for (const auto& mm : s.meshes) {
+        if (std::find(seen.begin(), seen.end(), mm.material) != seen.end()) continue;
+        seen.push_back(mm.material);
+        const auto& m = sceneMaterial(mm.material);
+        f << std::format("    \"{}\": ({:.4f}, {:.4f}, {:.4f}, {:.2f}, {:.1f}, {:.2f}),\n", esc(mm.material), m.rgb[0], m.rgb[1], m.rgb[2], m.roughness, m.metallic, m.opacity);
+    }
+    f << "}\n\n";
+    f << "# 2) glTF importi (Interchange) va materiallarni nom bo'yicha almashtirish\n"
+         "task = unreal.AssetImportTask()\n"
+         "task.set_editor_property(\"filename\", GLTF)\n"
+         "task.set_editor_property(\"destination_path\", DEST + \"/Model\")\n"
+         "task.set_editor_property(\"automated\", True)\n"
+         "task.set_editor_property(\"save\", True)\n"
+         "task.set_editor_property(\"replace_existing\", True)\n"
+         "at.import_asset_tasks([task])\n"
+         "insts = {k: inst(\"MI_\" + k, *v) for k, v in MATS.items()}\n"
+         "for path in eal.list_assets(DEST + \"/Model\", recursive=True):\n"
+         "    sm = eal.load_asset(path)\n"
+         "    if not isinstance(sm, unreal.StaticMesh): continue\n"
+         "    sms = sm.get_editor_property(\"static_materials\")\n"
+         "    for i, slot in enumerate(sms):\n"
+         "        nm = str(slot.get_editor_property(\"material_slot_name\"))\n"
+         "        key = next((k for k in insts if nm == k or nm.startswith(k) or k in nm), None)\n"
+         "        if key: sm.set_material(i, insts[key])\n"
+         "    if not any(a.get_actor_label() == sm.get_name() for a in eas.get_all_level_actors()):\n"
+         "        a = spawn(unreal.StaticMeshActor, unreal.Vector(0, 0, 0), label=sm.get_name())\n"
+         "        a.static_mesh_component.set_static_mesh(sm)\n\n";
+    // yorug'lik va atmosfera
+    f << "# 3) Quyosh, osmon, bulut, tuman (SunSky bo'lmasa — DirectionalLight + SkyAtmosphere)\n"
+         "for a in eas.get_all_level_actors():\n"
+         "    if a.get_actor_label().startswith(\"AC_\") and not isinstance(a, unreal.StaticMeshActor): eas.destroy_actor(a)\n";
+    f << std::format("sun = spawn(unreal.DirectionalLight, unreal.Vector(0, 0, 0), unreal.Rotator(0, -{:.1f}, {:.1f}), \"AC_Quyosh\")\n",
+                     std::max(o.sunElevationDeg, 2.0), std::fmod(o.sunAzimuthDeg + 90.0, 360.0));
+    f << "lc = sun.get_component_by_class(unreal.DirectionalLightComponent)\n"
+         "lc.set_editor_property(\"intensity\", 10.0)\n"
+         "lc.set_editor_property(\"atmosphere_sun_light\", True)\n"
+         "lc.set_editor_property(\"dynamic_shadow_distance_movable_light\", 40000.0)\n"
+         "spawn(unreal.SkyAtmosphere, unreal.Vector(0, 0, 0), label=\"AC_Atmosfera\")\n"
+         "sky = spawn(unreal.SkyLight, unreal.Vector(0, 0, 500), label=\"AC_OsmonYorugi\")\n"
+         "sky.get_component_by_class(unreal.SkyLightComponent).set_editor_property(\"real_time_capture\", True)\n"
+         "spawn(unreal.VolumetricCloud, unreal.Vector(0, 0, 0), label=\"AC_Bulutlar\")\n"
+         "fog = spawn(unreal.ExponentialHeightFog, unreal.Vector(0, 0, 0), label=\"AC_Tuman\")\n"
+         "fc = fog.get_component_by_class(unreal.ExponentialHeightFogComponent)\n"
+         "fc.set_editor_property(\"fog_density\", 0.008)\n"
+         "fc.set_editor_property(\"volumetric_fog\", True)\n"
+         "pp = spawn(unreal.PostProcessVolume, unreal.Vector(0, 0, 0), label=\"AC_PostProcess\")\n"
+         "pp.set_editor_property(\"unbound\", True)\n"
+         "ps = pp.get_editor_property(\"settings\")\n"
+         "ps.set_editor_property(\"override_auto_exposure_bias\", True); ps.set_editor_property(\"auto_exposure_bias\", 0.5)\n"
+         "ps.set_editor_property(\"override_bloom_intensity\", True); ps.set_editor_property(\"bloom_intensity\", 0.3)\n"
+         "ps.set_editor_property(\"override_vignette_intensity\", True); ps.set_editor_property(\"vignette_intensity\", 0.25)\n"
+         "pp.set_editor_property(\"settings\", ps)\n\n";
+    // kameralar
+    const double ex = x1 + span * 0.05, ey = y0 - span * 0.05;
+    auto look = [&](double ax, double ay, double az, double bx, double by, double bz) {
+        // UE: yaw — X dan Y ga (Y = −y), pitch — yuqoriga musbat
+        const double dx = bx - ax, dy = -(by - ay), dz = bz - az;
+        const double yaw = std::atan2(dy, dx) * 180 / kPI, pitch = std::atan2(dz, std::hypot(dx, dy)) * 180 / kPI;
+        return std::format("unreal.Rotator(0, {:.2f}, {:.2f})", pitch, yaw);
+    };
+    f << "# 4) Kameralar\n";
+    f << "cam = spawn(unreal.CineCameraActor, " << ue(ex, ey, z0 + 1.7) << ", " << look(ex, ey, z0 + 1.7, cx, cy, z0 + 5) << ", \"AC_Kamera_Odam\")\n"
+      << "cam.get_cine_camera_component().set_editor_property(\"current_focal_length\", 24.0)\n";
+    const double dxp = cx + span * 0.55, dyp = cy - span * 0.55, dzp = z1 + span * 0.35;
+    f << "dron = spawn(unreal.CineCameraActor, " << ue(dxp, dyp, dzp) << ", " << look(dxp, dyp, dzp, cx, cy, z0) << ", \"AC_Kamera_Dron\")\n"
+      << "dron.get_cine_camera_component().set_editor_property(\"current_focal_length\", 35.0)\n\n";
+    // markerlar
+    f << "# 5) Daraxt / buta / odam / avto: aktivlar jadvali (kind;/Game/.../Mesh.Mesh;balandlik_m) bo'yicha ISM aktorlari\n"
+         "MARKERS = [  # kind, x, y, z (UE, sm), balandlik_m, burilish\n";
+    for (const auto& m : s.markers)
+        f << std::format("    (\"{}\", {:.1f}, {:.1f}, {:.1f}, {:.2f}, {:.1f}),\n", esc(m.kind), (m.p.x - s.origin.x) * 100, -(m.p.y - s.origin.y) * 100,
+                         (m.p.z - s.origin.z) * 100, m.height, m.rotDeg);
+    f << "]\n"
+         "assets = {}\n"
+         "if os.path.exists(ASSETS_CSV):\n"
+         "    with open(ASSETS_CSV, encoding=\"utf-8\") as fh:\n"
+         "        for row in csv.reader(fh, delimiter=\";\"):\n"
+         "            if len(row) >= 2 and row[0] and not row[0].startswith(\"#\") and row[0] != \"kind\":\n"
+         "                mesh = eal.load_asset(row[1].strip())\n"
+         "                if mesh: assets.setdefault(row[0].strip(), []).append((mesh, float(row[2]) if len(row) > 2 and row[2].strip() else 0.0))\n"
+         "def ism_component(actor, mesh):\n"
+         "    try:   # UE5: SubobjectDataSubsystem orqali komponent qo'shish\n"
+         "        sds = unreal.get_engine_subsystem(unreal.SubobjectDataSubsystem)\n"
+         "        root = sds.k2_gather_subobject_data_for_instance(actor)[0]\n"
+         "        p = unreal.AddNewSubobjectParams(parent_handle=root, new_class=unreal.InstancedStaticMeshComponent, blueprint_context=None)\n"
+         "        handle, fail = sds.add_new_subobject(p)\n"
+         "        lib = unreal.SubobjectDataBlueprintFunctionLibrary\n"
+         "        comp = lib.get_object(lib.get_data(handle))\n"
+         "        comp.set_static_mesh(mesh)\n"
+         "        return comp\n"
+         "    except Exception as e:\n"
+         "        unreal.log_warning(\"AsiaCAD: ISM qo'shilmadi: \" + str(e))\n"
+         "        return None\n"
+         "groups = {}\n"
+         "for i, (kind, x, y, z, h, rot) in enumerate(MARKERS):\n"
+         "    lst = assets.get(kind)\n"
+         "    if not lst: continue\n"
+         "    mesh, h0 = lst[i % len(lst)]   # bir turda bir nechta aktiv — navbat bilan (xilma-xillik)\n"
+         "    key = (kind, mesh.get_path_name())\n"
+         "    if key not in groups:\n"
+         "        a = spawn(unreal.StaticMeshActor, unreal.Vector(0, 0, 0), label=\"AC_\" + kind + \"_\" + mesh.get_name())\n"
+         "        groups[key] = ism_component(a, mesh)\n"
+         "    k = h / h0 if h0 > 0 and h > 0 else 1.0\n"
+         "    tr = unreal.Transform(unreal.Vector(x, y, z), unreal.Rotator(0, 0, -rot), unreal.Vector(k, k, k))\n"
+         "    if groups[key]: groups[key].add_instance(tr)\n"
+         "    else:   # ISM qo'shilmadi — alohida aktor\n"
+         "        b = spawn(unreal.StaticMeshActor, tr.translation, tr.rotation.rotator(), \"AC_\" + kind + \"_\" + str(i))\n"
+         "        b.static_mesh_component.set_static_mesh(mesh); b.set_actor_scale3d(tr.scale3d)\n"
+         "if not assets: unreal.log_warning(\"AsiaCAD: aktivlar jadvali bo'sh — daraxt/odam/avto qo'yilmadi (\" + str(len(MARKERS)) + \" marker)\")\n\n";
+    // yorliqlar
+    f << "# 6) Yorliqlar (lot nomlari)\nLABELS = [\n";
+    for (const auto& l : s.labels)
+        f << std::format("    (\"{}\", {:.1f}, {:.1f}, {:.1f}),\n", esc(l.text), (l.p.x - s.origin.x) * 100, -(l.p.y - s.origin.y) * 100, (l.p.z - s.origin.z) * 100);
+    f << "]\n"
+         "for text, x, y, z in LABELS:\n"
+         "    t = spawn(unreal.TextRenderActor, unreal.Vector(x, y, z + 6000), unreal.Rotator(0, 0, 180), \"AC_Yorliq_\" + text)\n"
+         "    tc = t.get_component_by_class(unreal.TextRenderComponent)\n"
+         "    tc.set_text(text)\n"
+         "    tc.set_editor_property(\"world_size\", 1200.0)\n"
+         "    tc.set_editor_property(\"horizontal_alignment\", unreal.HorizTextAligment.EHTA_CENTER)\n"
+         "    tc.set_editor_property(\"text_render_color\", unreal.Color(255, 220, 60, 255))\n\n";
+    // Cesium
+    f << "# 7) Cesium for Unreal (bo'lsa): georeferens + Google fotorealistik 3D shahar plitalari\n"
+         "if hasattr(unreal, \"CesiumGeoreference\"):\n"
+         "  try:\n"
+         "      geo = next((a for a in eas.get_all_level_actors() if isinstance(a, unreal.CesiumGeoreference)), None) or spawn(unreal.CesiumGeoreference, unreal.Vector(0, 0, 0), label=\"AC_Georeferens\")\n"
+         "      geo.set_editor_property(\"origin_latitude\", GEO_LAT)\n"
+         "      geo.set_editor_property(\"origin_longitude\", GEO_LON)\n"
+         "      geo.set_editor_property(\"origin_height\", GEO_ALT)\n"
+         "      if GOOGLE_3D_TILES_KEY:\n"
+         "          tiles = spawn(unreal.Cesium3DTileset, unreal.Vector(0, 0, 0), label=\"AC_Google3D\")\n"
+         "          tiles.set_editor_property(\"tileset_source\", unreal.TilesetSource.FROM_URL)\n"
+         "          tiles.set_editor_property(\"url\", \"https://tile.googleapis.com/v1/3dtiles/root.json?key=\" + GOOGLE_3D_TILES_KEY)\n"
+         "  except Exception as e:\n"
+         "    unreal.log_warning(\"AsiaCAD: Cesium sozlanmadi: \" + str(e))\n"
+         "else:\n"
+         "    unreal.log(\"AsiaCAD: Cesium for Unreal plagini topilmadi — atrof shahar plitalarsiz\")\n\n"
+         "try:\n    unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).save_current_level()\n"
+         "except Exception:\n    pass\n"
+         "unreal.log(\"AsiaCAD: sahna tayyor — \" + str(len(MARKERS)) + \" marker, \" + str(len(LABELS)) + \" yorliq\")\n";
+    if (!f) throw Error("export.err.write", {pyPath});
+}
+
 SunPos sunPosition(double lat, double lon, int year, int month, int day, double hour, double utcOffset) {
     // kun tartib raqami
     static const int cum[12] = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};

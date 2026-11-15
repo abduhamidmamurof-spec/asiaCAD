@@ -78,7 +78,7 @@ bool Interpreter::dispatchSeismic(const std::string& cmd, const Args& a) {
         for (const auto& f : flags)
             if (f != "BUILDING" && f != "GENPLAN" && f != "NOMARKERS" && f != "SHELL" && f != "IFCCOLORS") throw usage();
         for (const auto& [k, v] : m)
-            if (k != "IFC" && k != "DATE" && k != "TIME" && k != "MAX" && k != "RENDERER") throw usage();
+            if (k != "IFC" && k != "DATE" && k != "TIME" && k != "MAX" && k != "RENDERER" && k != "UNREAL" && k != "GEO" && k != "LABELS") throw usage();
         bim::Scene sc;
         int parts = 0;
         if (auto it = m.find("IFC"); it != m.end()) {
@@ -234,6 +234,43 @@ bool Interpreter::dispatchSeismic(const std::string& cmd, const Args& a) {
             }
             bim::writeMaxScript(sc, ms.string(), mo);
             say("export.msg.max", {ms.string(), obj.filename().string(), ac.filename().string()});
+        }
+        // Unreal Engine 5: glTF + Python skripti + aktivlar jadvali namunasi (+ chizmadagi matnlardan yorliqlar)
+        if (auto it = m.find("UNREAL"); it != m.end()) {
+            bim::UnrealOptions uo;
+            uo.sunAzimuthDeg = sun.azimuthDeg;
+            uo.sunElevationDeg = sun.elevationDeg;
+            uo.year = Y; uo.month = M; uo.day = D; uo.hour = hour;
+            if (auto g = m.find("GEO"); g != m.end()) {
+                const auto c = g->second.find(',');
+                if (c == std::string::npos) throw usage();
+                uo.lat = parseNumber(g->second.substr(0, c));
+                uo.lon = parseNumber(g->second.substr(c + 1));
+            }
+            if (auto lb = m.find("LABELS"); lb != m.end()) {
+                const auto pat = utf8::toUpper(lb->second);
+                for (EntityId id : doc_.ids())
+                    if (const auto* t = dynamic_cast<const TextEntity*>(doc_.find(id)); t && utf8::toUpper(t->layer()).find(pat) != std::string::npos && !t->text().empty())
+                        sc.labels.push_back({t->text(), t->insertion()});
+            }
+            const auto py = std::filesystem::path(it->second);
+            const auto gl = py.parent_path() / (py.stem().string() + ".gltf");
+            bim::writeGltf(sc, gl.string());
+            uo.gltfFile = gl.filename().string();
+            const auto ac = py.parent_path() / (py.stem().string() + "_aktivlar.csv");
+            uo.assetsCsv = ac.filename().string();
+            if (!std::filesystem::exists(ac)) {
+                std::ofstream a(ac, std::ios::binary);
+                a << "kind;mesh;balandlik\n"
+                     "# Fab / Quixel Megascans aktivlarini loyihaga qo'shing va yo'lini yozing (Content Browser -> Copy Reference)\n"
+                     "# TREE;/Game/Megascans/3D_Plants/Plane_Tree/SM_PlaneTree_01.SM_PlaneTree_01;12\n"
+                     "# TREE;/Game/Megascans/3D_Plants/Cherry/SM_Cherry_02.SM_Cherry_02;6\n"
+                     "# SHRUB;/Game/Megascans/3D_Plants/Boxwood/SM_Boxwood_01.SM_Boxwood_01;1.2\n"
+                     "# PERSON;/Game/Characters/SM_Person_Walk.SM_Person_Walk;1.75\n"
+                     "# CAR;/Game/Vehicles/SM_Sedan.SM_Sedan;1.5\n";
+            }
+            bim::writeUnrealScript(sc, py.string(), uo);
+            say("export.msg.unreal", {py.string(), uo.gltfFile, uo.assetsCsv, std::to_string(sc.labels.size())});
         }
         std::map<std::string, int> cnt;
         for (const auto& mk : sc.markers) ++cnt[mk.kind];
