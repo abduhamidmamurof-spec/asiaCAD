@@ -68,6 +68,21 @@ void writeObj(const Scene& s, const std::string& objPath);           // .obj + y
 void writeGltf(const Scene& s, const std::string& gltfPath);         // .gltf + yonida .bin
 void writeMarkersCsv(const Scene& s, const std::string& csvPath);    // kind;x;y;z;height;rot
 
+// 3ds Max uchun MaxScript (Corona / V-Ray / standart Physical): OBJ importi, fizik materiallar (AC_* nomlari bo'yicha),
+// quyosh + osmon (sana/soat bo'yicha yo'nalish), ikki kamera (inson ko'zi balandligi va dron), markerlar o'rniga nuqtalar
+// (AC_TREE_…, balandlik nomda) — yonidagi aktivlar jadvali (kind;fayl.max) bo'lsa proksi obyektlar shu nuqtalarga nusxalanadi;
+// oxirida render buyrug'i (3dsmaxcmd) izohda.
+enum class MaxRenderer { Corona, VRay, Physical };
+struct MaxScriptOptions {
+    MaxRenderer renderer = MaxRenderer::Corona;
+    double sunAzimuthDeg = 220, sunElevationDeg = 35;
+    std::string objFile;              // import qilinadigan OBJ (skript yonida, nisbiy nom)
+    std::string assetsCsv;            // aktivlar jadvali nomi (kind;fayl.max;masshtab_balandligi), bo'lmasa — faqat nuqtalar
+    int width = 3840, height = 2160;
+};
+bool maxRendererFromKey(const std::string& key, MaxRenderer& out);
+void writeMaxScript(const Scene& s, const std::string& msPath, const MaxScriptOptions& o);
+
 // Quyosh holati (NOAA soddalashtirilgan): kenglik/uzunlik (°), mahalliy vaqt, UTC siljishi → azimut (shimoldan, soat yo'nalishi), balandlik (°)
 struct SunPos { double azimuthDeg = 0, elevationDeg = 0; };
 SunPos sunPosition(double latDeg, double lonDeg, int year, int month, int day, double localHour, double utcOffset);

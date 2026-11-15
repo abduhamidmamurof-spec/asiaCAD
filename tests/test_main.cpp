@@ -5042,6 +5042,51 @@ TEST(scene_export_ifc_shell_colors) {
     CHECK(sceneMaterial("IFC_88AACC_G").opacity < 0.5 && std::abs(sceneMaterial("IFC_C8C8C8").rgb[0] - 200 / 255.0) < 1e-9);
 }
 
+TEST(scene_export_maxscript_corona_vray) {
+    using namespace bim;
+    Scene sc;
+    addPrism(sc, "AC_Beton", {{0, 0, 0}, {20, 0, 0}, {20, 10, 0}, {0, 10, 0}}, {}, 0, 9);
+    addPrism(sc, "AC_Shisha", {{0, -0.1, 3}, {20, -0.1, 3}, {20, 0, 3}, {0, 0, 3}}, {}, 3, 6);
+    sc.markers.push_back({"TREE", {5, -8, 0}, 9.5, 30});
+    sc.markers.push_back({"CAR", {12, -12, 0}, 1.5, 90});
+    centerScene(sc);
+    const auto dir = std::filesystem::temp_directory_path() / "asiacad_max_test";
+    std::filesystem::create_directories(dir);
+    auto read = [](const std::filesystem::path& p) { std::ifstream f(p); return std::string((std::istreambuf_iterator<char>(f)), {}); };
+    MaxScriptOptions o;
+    o.objFile = "s.obj";
+    o.assetsCsv = "s_aktivlar.csv";
+    o.sunAzimuthDeg = 180;   // janub: quyosh Y manfiy tomonda
+    o.sunElevationDeg = 30;
+    writeMaxScript(sc, (dir / "c.ms").string(), o);
+    const auto c = read(dir / "c.ms");
+    CHECK(c.find("CoronaPhysicalMtl") != std::string::npos && c.find("CoronaSun") != std::string::npos && c.find("CoronaSky") != std::string::npos);
+    CHECK(c.find("acMats[\"AC_Shisha\"]") != std::string::npos && c.find("importFile (dir + \"s.obj\")") != std::string::npos);
+    CHECK(c.find("#(\"TREE\",") != std::string::npos && c.find("#(\"CAR\",") != std::string::npos);
+    CHECK(c.find("AC_Kamera_Odam") != std::string::npos && c.find("AC_Kamera_Dron") != std::string::npos);
+    // quyosh janubda: y koordinatasi markazdan manfiy
+    const auto sp = c.find("CoronaSun name:\"AC_Quyosh\" pos:[");
+    CHECK(sp != std::string::npos);
+    if (sp != std::string::npos) {
+        double x = 0, y = 0, z = 0;
+        CHECK(std::sscanf(c.c_str() + c.find("pos:[", sp) + 5, "%lf,%lf,%lf", &x, &y, &z) == 3);
+        CHECK(y < -10 && z > 5);
+    }
+    o.renderer = MaxRenderer::VRay;
+    writeMaxScript(sc, (dir / "v.ms").string(), o);
+    const auto v = read(dir / "v.ms");
+    CHECK(v.find("VRayMtl") != std::string::npos && v.find("VRaySun") != std::string::npos && v.find("CoronaSun") == std::string::npos);
+    MaxRenderer r;
+    CHECK(maxRendererFromKey("v-ray", r) && r == MaxRenderer::VRay && maxRendererFromKey("corona", r) && r == MaxRenderer::Corona && !maxRendererFromKey("blender", r));
+    // CLI: EXPORT3D ... MAX=  → .ms + .obj + aktivlar jadvali namunasi
+    const auto gl = (dir / "sahna.gltf").string(), ms = (dir / "sahna_max.ms").string();
+    std::filesystem::remove(dir / "sahna_max_aktivlar.csv");
+    const auto out = runScript("uz", {"LAYER Gazon", "PLINE 0,0 30,0 30,20 0,20 C", "CHPROP ALL LAYER=Gazon", "EXPORT3D " + gl + " GENPLAN MAX=" + ms + " RENDERER=VRAY"});
+    CHECK(std::filesystem::exists(ms) && std::filesystem::exists(dir / "sahna_max.obj") && std::filesystem::exists(dir / "sahna_max_aktivlar.csv"));
+    CHECK(read(ms).find("VRayMtl") != std::string::npos);
+    CHECK(out.find("3ds Max") != std::string::npos);
+}
+
 TEST(genplan_zones_curbs_parking) {
     using namespace civil;
     CHECK(gpClassifyLayer("VP-H-OZELENENIE", gpDefaultRules()) == GpZone::Green);

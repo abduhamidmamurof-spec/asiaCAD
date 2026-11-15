@@ -162,7 +162,7 @@ const ActDef kActs[] = {
     {"ewtin", "terrain", "gui.act.ewtin", false},           {"ewprofile", "profile", "gui.act.ewprofile", false},
     {"ewsections", "sections", "gui.act.ewsections", false}, {"ewcarto", "cartogram", "gui.act.ewcarto", false},
     {"ewvolume", "volume", "gui.act.ewvolume", false},
-    {"seismic", "seismic", "gui.act.seismic", false}, {"armodel", "bim", "gui.act.armodel", false}, {"axes", "grid", "gui.act.axes", false}, {"genplan", "city", "gui.act.genplan", false}, {"export3d", "ptexport", "gui.act.export3d", false}, {"facade", "bim", "gui.act.facade", false}, {"geotech", "pile", "gui.act.geotech", false},
+    {"seismic", "seismic", "gui.act.seismic", false}, {"armodel", "bim", "gui.act.armodel", false}, {"axes", "grid", "gui.act.axes", false}, {"genplan", "city", "gui.act.genplan", false}, {"export3d", "ptexport", "gui.act.export3d", false}, {"export3dmax", "ptexport", "gui.act.export3dmax", false}, {"facade", "bim", "gui.act.facade", false}, {"geotech", "pile", "gui.act.geotech", false},
     {"view3d", "view3d", "gui.act.view3d", false},
     {"sheets", "sheet", "gui.act.sheets", false},
     // v0.31: Fayl / Ko'rinish / Tahlil varaqlari
@@ -730,6 +730,20 @@ void MainWindow::buildActions() {
         if (!ifc_.empty() && !ifc_.front().path.isEmpty()) line += QString(" \"IFC=%1\"").arg(ifc_.front().path);
         runLine(line);
     });
+    connect(act_["export3dmax"], &QAction::triggered, this, [this] {
+        // 3ds Max (Corona / V-Ray): OBJ + MaxScript + aktivlar jadvali; render dasturi tanlanadi
+        QStringList rs{"Corona", "V-Ray", t("gui.ex.physical")};
+        bool ok = false;
+        const QString r = QInputDialog::getItem(this, t("gui.act.export3dmax"), t("gui.ex.renderer"), rs, 0, false, &ok);
+        if (!ok) return;
+        const QString f = QFileDialog::getSaveFileName(this, t("gui.act.export3dmax"), lastDir_ + "/sahna_max.ms", "MAXScript (*.ms)");
+        if (f.isEmpty()) return;
+        const QFileInfo fi(f);
+        QString line = QString("EXPORT3D \"%1\" \"MAX=%2\" RENDERER=%3")
+                           .arg(fi.absolutePath() + "/" + fi.completeBaseName() + ".gltf", f, r == rs[0] ? "CORONA" : r == rs[1] ? "VRAY" : "PHYSICAL");
+        if (!ifc_.empty() && !ifc_.front().path.isEmpty()) line += QString(" \"IFC=%1\" SHELL").arg(ifc_.front().path);
+        runLine(line);
+    });
     connect(act_["facade"], &QAction::triggered, this, [this] {
         // fasad: yuklangan IFC bo'lsa — uning qavatlaridan, bo'lmasa chizmadagi kontur (FASAD/KONTUR qatlami)
         QStringList types{t("gui.fc.curtain"), t("gui.fc.band"), t("gui.fc.punched")};
@@ -976,7 +990,7 @@ void MainWindow::buildRibbon() {
         {"gui.tab.arch", {{"gui.grp.arch3d", {"armodel"}},
                           {"gui.grp.axes", {"axes"}},
                           {"gui.grp.facadegen", {"facade", "genplan"}},
-                          {"gui.grp.render", {"export3d"}}}},
+                          {"gui.grp.render", {"export3d", "export3dmax"}}}},
         {"gui.tab.view", {{"gui.grp.model", {"view2d", "view3d"}},
                           {"gui.grp.camera", {"cam3d", "cut3d", "drive"}},
                           {"gui.grp.cats", {"cats3d"}},

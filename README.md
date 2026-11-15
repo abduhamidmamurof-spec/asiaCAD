@@ -810,7 +810,7 @@ Normaga mos kelmagan elementlar 3D da qizil (xato) yoki sariq (ogohlantirish) bo
 
 ## Render uchun 3D sahna (v0.34)
 
-- **EXPORT3D fayl.gltf|fayl.obj [IFC=fayl.ifc [SHELL] [IFCCOLORS]] [BUILDING] [GENPLAN] [NOMARKERS] [DATE=2026-06-21] [TIME=16:00]** — D5 Render,
+- **EXPORT3D fayl.gltf|fayl.obj [IFC=fayl.ifc [SHELL] [IFCCOLORS]] [BUILDING] [GENPLAN] [NOMARKERS] [DATE=2026-06-21] [TIME=16:00] [MAX=sahna.ms [RENDERER=CORONA|VRAY|PHYSICAL]]** — D5 Render,
   Lumion, Twinmotion, Unreal, 3ds Max uchun: glTF 2.0 (.gltf + .bin, PBR, Y yuqoriga) yoki OBJ + MTL; materiallar standart nomlar
   bilan (AC_Beton, AC_Shisha, AC_Gazoblok, AC_Asfalt, AC_Plitka, AC_Chim …) — render dasturida bir marta moslanadi; IFC modeli,
   chizmadagi bino (BINO) va genreja qoplamalari; `_markerlar.csv` — daraxt/buta/odam/avto joylari (render dasturining o'z
@@ -820,6 +820,14 @@ Normaga mos kelmagan elementlar 3D da qizil (xato) yoki sariq (ogohlantirish) bo
   (Revit kvartira blokida uchburchaklar ~10 barobar kam — yuzlab blok render dasturiga sig'adi). `IFCCOLORS` — materiallar IFC
   rangi bo'yicha (`IFC_RRGGBB`, shaffof — `_G`), render dasturida rang bo'yicha moslash uchun.
 - Menyu `Ko'rinish → Render → Renderga eksport (D5)`.
+- `MAX=sahna.ms` — 3ds Max uchun tayyor sahna skripti (yonida `sahna.obj` va `sahna_aktivlar.csv`): OBJ importi, fizik materiallar
+  AC_* nomlari bo'yicha (Corona — CoronaPhysicalMtl, V-Ray — VRayMtl, aks holda PhysicalMaterial; shisha — sindirish bilan),
+  quyosh + osmon (CoronaSun/CoronaSky, VRaySun/VRaySky; yo'nalish DATE/TIME bo'yicha, Toshkent), ikki kamera (`AC_Kamera_Odam` —
+  1,6 m, `AC_Kamera_Dron`), 4K o'lcham. Daraxt/buta/odam/avto o'rniga AsiaCAD model yasamaydi: aktivlar jadvaliga
+  `TREE;Chinor_12m.max;12` kabi qatorlar yozilsa (Chaos Cosmos, Maxtree, Laubwerk, AXYZ proksi saqlangan .max fayllar), skript ularni
+  har marker joyiga nusxa (instance) qilib qo'yadi, balandlik bo'yicha masshtablaydi va buradi; jadval bo'sh bo'lsa — nomida
+  balandligi bor nuqtalar (`AC_TREE_12_h9.5`). Avtomatik render: `3dsmaxcmd sahna.max -camera:AC_Kamera_Dron -o:render.png`.
+- Menyu `Arxitektura → Render → Renderga yuborish (3ds Max)`: render dasturi tanlanadi; yuklangan IFC bo'lsa — `SHELL` bilan.
 
 ## Fasad (v0.34)
 

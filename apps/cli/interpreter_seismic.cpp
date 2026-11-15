@@ -77,6 +77,8 @@ bool Interpreter::dispatchSeismic(const std::string& cmd, const Args& a) {
         auto has = [&](const char* f) { return std::find(flags.begin(), flags.end(), f) != flags.end(); };
         for (const auto& f : flags)
             if (f != "BUILDING" && f != "GENPLAN" && f != "NOMARKERS" && f != "SHELL" && f != "IFCCOLORS") throw usage();
+        for (const auto& [k, v] : m)
+            if (k != "IFC" && k != "DATE" && k != "TIME" && k != "MAX" && k != "RENDERER") throw usage();
         bim::Scene sc;
         int parts = 0;
         if (auto it = m.find("IFC"); it != m.end()) {
@@ -211,6 +213,27 @@ bool Interpreter::dispatchSeismic(const std::string& cmd, const Args& a) {
                              "\"place\":\"Toshkent 41.31N 69.28E UTC+5\"}},\"markers\":{},\"triangles\":{},\"up\":\"{}\"}}",
                              sc.origin.x, sc.origin.y, sc.origin.z, sun.azimuthDeg, sun.elevationDeg, Y, M, D, hour, sc.markers.size(), sc.triangleCount(),
                              ext == ".OBJ" ? "Z" : "Y");
+        }
+        // 3ds Max skripti (Corona / V-Ray): OBJ + .ms + aktivlar jadvali namunasi
+        if (auto it = m.find("MAX"); it != m.end()) {
+            bim::MaxScriptOptions mo;
+            if (auto r = m.find("RENDERER"); r != m.end() && !bim::maxRendererFromKey(r->second, mo.renderer)) throw usage();
+            mo.sunAzimuthDeg = sun.azimuthDeg;
+            mo.sunElevationDeg = sun.elevationDeg;
+            const auto ms = std::filesystem::path(it->second);
+            const auto obj = ms.parent_path() / (ms.stem().string() + ".obj");
+            bim::writeObj(sc, obj.string());
+            mo.objFile = obj.filename().string();
+            const auto ac = ms.parent_path() / (ms.stem().string() + "_aktivlar.csv");
+            mo.assetsCsv = ac.filename().string();
+            if (!std::filesystem::exists(ac)) {
+                std::ofstream a(ac, std::ios::binary);
+                a << "kind;fayl;balandlik\n"
+                     "# TREE;Chinor_12m.max;12   — Chaos Cosmos / Maxtree / Laubwerk proksi saqlangan .max fayl (skript yonida)\n"
+                     "# SHRUB;Buta_1m.max;1.2\n# PERSON;Odam_yurgan.max;1.75\n# CAR;Avto_sedan.max;1.5\n";
+            }
+            bim::writeMaxScript(sc, ms.string(), mo);
+            say("export.msg.max", {ms.string(), obj.filename().string(), ac.filename().string()});
         }
         std::map<std::string, int> cnt;
         for (const auto& mk : sc.markers) ++cnt[mk.kind];

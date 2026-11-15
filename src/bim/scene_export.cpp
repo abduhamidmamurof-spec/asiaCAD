@@ -3,6 +3,8 @@
 
 #include <asiacad/core/error.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
@@ -373,6 +375,133 @@ void writeMarkersCsv(const Scene& s, const std::string& csvPath) {
     f << "kind;x;y;z;height;rot\n";
     for (const auto& m : s.markers)
         f << std::format("{};{:.3f};{:.3f};{:.3f};{:.2f};{:.1f}\n", m.kind, m.p.x - s.origin.x, m.p.y - s.origin.y, m.p.z - s.origin.z, m.height, m.rotDeg);
+}
+
+bool maxRendererFromKey(const std::string& key, MaxRenderer& out) {
+    std::string k;
+    for (char ch : key) k += static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+    if (k == "CORONA") out = MaxRenderer::Corona;
+    else if (k == "VRAY" || k == "V-RAY") out = MaxRenderer::VRay;
+    else if (k == "PHYSICAL" || k == "ART" || k == "ARNOLD") out = MaxRenderer::Physical;
+    else return false;
+    return true;
+}
+
+void writeMaxScript(const Scene& s, const std::string& msPath, const MaxScriptOptions& o) {
+    std::ofstream f(msPath, std::ios::binary);
+    if (!f) throw Error("export.err.write", {msPath});
+    const bool corona = o.renderer == MaxRenderer::Corona, vray = o.renderer == MaxRenderer::VRay;
+    // sahna chegaralari (origin ayirilgan)
+    double x0 = 1e300, y0 = 1e300, z0 = 1e300, x1 = -1e300, y1 = -1e300, z1 = -1e300;
+    for (const auto& mm : s.meshes)
+        for (const auto& t : mm.tris)
+            for (const auto& p : t) {
+                x0 = std::min(x0, p.x - s.origin.x); x1 = std::max(x1, p.x - s.origin.x);
+                y0 = std::min(y0, p.y - s.origin.y); y1 = std::max(y1, p.y - s.origin.y);
+                z0 = std::min(z0, p.z - s.origin.z); z1 = std::max(z1, p.z - s.origin.z);
+            }
+    if (x0 > x1) { x0 = y0 = z0 = 0; x1 = y1 = z1 = 10; }
+    const double cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, span = std::max({x1 - x0, y1 - y0, 10.0});
+    f << "-- AsiaCAD -> 3ds Max sahna skripti (" << (corona ? "Corona" : vray ? "V-Ray" : "Physical") << ")\n"
+      << "-- Ishga tushirish: Scripting > Run Script, yoki 3dsmax.exe -U MAXScript " << std::filesystem::path(msPath).filename().string() << "\n"
+      << "-- Birlik: metr. Boshlanish nuqtasi (asl koordinatalar): " << std::format("{:.3f} {:.3f} {:.3f}", s.origin.x, s.origin.y, s.origin.z) << "\n"
+      << "(\n"   // butun skript bitta blokda — local o'zgaruvchilar
+      << "units.SystemType = #Meters\nunits.DisplayType = #Metric\nunits.MetricType = #Meters\n"
+      << "local dir = getFilenamePath (getThisScriptFilename())\n"
+      << "fn acTree n = (local r = #(n); for c in n.children do join r (acTree c); r)\n";
+    if (!o.objFile.empty())
+        f << "importFile (dir + \"" << o.objFile << "\") #noPrompt using:ObjImp\n";
+    // materiallar
+    f << "fn acMtl nm r g b rough metal opac = (\n";
+    if (corona)
+        f << "  local m = CoronaPhysicalMtl name:nm\n  m.baseColor = color (r*255) (g*255) (b*255)\n  m.baseRoughness = rough\n"
+             "  m.metalnessMode = (if metal > 0.5 then 1 else 0)\n"
+             "  if opac < 0.99 do (m.refractionAmount = 1.0 - opac*0.5; m.thinAbsorption = true; m.baseIor = 1.52)\n  m\n";
+    else if (vray)
+        f << "  local m = VRayMtl name:nm\n  m.diffuse = color (r*255) (g*255) (b*255)\n  m.reflection = color 255 255 255\n"
+             "  m.brdf_useRoughness = true\n  m.reflection_glossiness = rough\n  m.reflection_metalness = metal\n"
+             "  if opac < 0.99 do (m.refraction = color 230 235 240; m.refraction_ior = 1.52; m.refraction_affectShadows = true)\n  m\n";
+    else
+        f << "  local m = PhysicalMaterial name:nm\n  m.base_color = color (r*255) (g*255) (b*255)\n  m.roughness = rough\n  m.metalness = metal\n"
+             "  if opac < 0.99 do (m.transparency = 1.0 - opac; m.trans_ior = 1.52)\n  m\n";
+    f << ")\nlocal acMats = Dictionary #string\n";
+    for (const auto& mm : s.meshes) {
+        const auto& m = sceneMaterial(mm.material);
+        f << std::format("acMats[\"{}\"] = acMtl \"{}\" {:.3f} {:.3f} {:.3f} {:.2f} {:.1f} {:.2f}\n", mm.material, mm.material, m.rgb[0], m.rgb[1], m.rgb[2],
+                         m.roughness, m.metallic, m.opacity);
+    }
+    // obyektlarga (OBJ: obyekt va material nomi bir xil) — nom bo'yicha, ko'p-material bo'lsa sub-materiallar bo'yicha
+    f << "for o in geometry do (\n"
+         "  local k = o.name\n"
+         "  if hasDictValue acMats k then o.material = acMats[k]\n"
+         "  else if o.material != undefined and classOf o.material == MultiMaterial then (\n"
+         "    for i = 1 to o.material.numsubs do (local sm = o.material[i]; if sm != undefined and hasDictValue acMats sm.name do o.material[i] = acMats[sm.name])\n"
+         "  ) else if o.material != undefined and hasDictValue acMats o.material.name do o.material = acMats[o.material.name]\n)\n";
+    // quyosh va osmon
+    const double az = o.sunAzimuthDeg * kPI / 180, el = std::max(o.sunElevationDeg, 2.0) * kPI / 180, R = span * 2;
+    const double sx = cx + R * std::cos(el) * std::sin(az), sy = cy + R * std::cos(el) * std::cos(az), sz = R * std::sin(el);
+    f << std::format("-- quyosh: azimut {:.1f} (shimoldan), balandlik {:.1f}\n", o.sunAzimuthDeg, o.sunElevationDeg);
+    if (corona)
+        f << std::format("local sun = CoronaSun name:\"AC_Quyosh\" pos:[{:.2f},{:.2f},{:.2f}]\n"
+                         "sun.dir = normalize (sun.pos - [{:.2f},{:.2f},0])   -- yorug'lik -Z bo'ylab, nishonga\n"
+                         "environmentMap = CoronaSky()\nuseEnvironmentMap = true\n", sx, sy, sz, cx, cy);
+    else if (vray)
+        f << std::format("local sun = VRaySun name:\"AC_Quyosh\" pos:[{:.2f},{:.2f},{:.2f}] target:(Targetobject pos:[{:.2f},{:.2f},0])\n"
+                         "environmentMap = VRaySky()\nuseEnvironmentMap = true\n", sx, sy, sz, cx, cy);
+    else
+        f << std::format("local sun = Directionallight name:\"AC_Quyosh\" pos:[{:.2f},{:.2f},{:.2f}] multiplier:3.0 castShadows:true\n"
+                         "sun.dir = normalize ([{:.2f},{:.2f},0] - sun.pos)\nenvironmentMap = Physical_Sun___Sky_Environment()\nuseEnvironmentMap = true\n",
+                         sx, sy, sz, cx, cy);
+    // kameralar: inson ko'zi (1,6 m) — sahna janubi-sharqidan, dron — 35° qiyalik
+    const double ex = x1 + span * 0.05, ey = y0 - span * 0.05;
+    f << std::format("local camEye = Physical name:\"AC_Kamera_Odam\" pos:[{:.2f},{:.2f},{:.2f}] target:(Targetobject pos:[{:.2f},{:.2f},{:.2f}])\n"
+                     "camEye.focal_length_mm = 28\n", ex, ey, z0 + 1.6, cx, cy, z0 + 4.0);
+    f << std::format("local camDron = Physical name:\"AC_Kamera_Dron\" pos:[{:.2f},{:.2f},{:.2f}] target:(Targetobject pos:[{:.2f},{:.2f},{:.2f}])\n"
+                     "camDron.focal_length_mm = 35\n", cx + span * 0.6, cy - span * 0.6, z1 + span * 0.45, cx, cy, z0);
+    // markerlar
+    f << "-- markerlar: kind -> fayl (aktivlar jadvali: kind;fayl.max;balandlik)\nlocal assets = Dictionary #string\n";
+    if (!o.assetsCsv.empty())
+        f << "local af = dir + \"" << o.assetsCsv << "\"\n"
+             "if doesFileExist af do (\n"
+             "  local fs = openFile af\n"
+             "  while not eof fs do (local ln = readLine fs; local p = filterString ln \";\"\n"
+             "    if p.count >= 2 and p[1] != \"kind\" and p[1][1] != \"#\" and doesFileExist (dir + p[2]) do (\n"
+             "      local before = objects as array\n"
+             "      mergeMaxFile (dir + p[2]) #select #mergedups #useSceneMtlDups quiet:true\n"
+             "      local src = for x in objects where findItem before x == 0 collect x\n"
+             "      if src.count > 0 do (local g = group src name:(\"AC_AKTIV_\" + p[1]); hide (acTree g); assets[p[1]] = #(g, (if p.count >= 3 then (p[3] as float) else 0.0)))))\n"
+             "  close fs)\n";
+    f << "local markers = #(\n";
+    for (std::size_t i = 0; i < s.markers.size(); ++i) {
+        const auto& m = s.markers[i];
+        f << std::format("  #(\"{}\",[{:.2f},{:.2f},{:.2f}],{:.2f},{:.1f}){}\n", m.kind, m.p.x - s.origin.x, m.p.y - s.origin.y, m.p.z - s.origin.z, m.height,
+                         m.rotDeg, i + 1 < s.markers.size() ? "," : "");
+    }
+    f << ")\n"
+         "for i = 1 to markers.count do (\n"
+         "  local mk = markers[i]\n"
+         "  if hasDictValue assets mk[1] then (\n"
+         "    local a = assets[mk[1]]\n"
+         "    local nn = #()\n"
+         "    maxOps.cloneNodes (acTree a[1]) cloneType:#instance newNodes:&nn\n"
+         "    unhide nn\n"
+         "    local c = (for x in nn where x.parent == undefined or findItem nn x.parent == 0 collect x)[1]\n"
+         "    c.pos = mk[2]\n"
+         "    rotate c (angleaxis mk[4] [0,0,1])\n"
+         "    if a[2] > 0 and mk[3] > 0 do (local k = mk[3] / a[2]; c.scale = [k,k,k])\n"
+         "    c.name = \"AC_\" + mk[1] + \"_\" + (i as string)\n"
+         "  ) else (\n"
+         "    Point name:(\"AC_\" + mk[1] + \"_\" + (i as string) + \"_h\" + (mk[3] as string)) pos:mk[2] size:(if mk[3] > 0 then mk[3] else 1) box:true cross:false\n"
+         "  )\n)\n";
+    f << std::format("renderWidth = {}\nrenderHeight = {}\n", o.width, o.height);
+    if (corona) f << "try (renderers.current = CoronaRenderer()) catch ()\n";
+    else if (vray) f << "try (renderers.current = V_Ray_GPU() ) catch (try (renderers.current = V_Ray()) catch ())\n";
+    f << "viewport.setCamera camDron\n"
+         "-- avtomatik render (buyruq qatoridan):\n"
+         "-- 3dsmaxcmd sahna.max -camera:AC_Kamera_Dron -o:render_dron.png\n"
+         "format \"AsiaCAD: sahna tayyor (% marker)\\n\" markers.count\n"
+         ")\n";
+    if (!f) throw Error("export.err.write", {msPath});
 }
 
 SunPos sunPosition(double lat, double lon, int year, int month, int day, double hour, double utcOffset) {
