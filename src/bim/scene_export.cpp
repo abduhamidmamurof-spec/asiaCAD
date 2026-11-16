@@ -544,6 +544,16 @@ void writeUnrealScript(const Scene& s, const std::string& pyPath, const UnrealOp
       << "at = unreal.AssetToolsHelpers.get_asset_tools()\n"
       << "mel = unreal.MaterialEditingLibrary\n"
       << "eal = unreal.EditorAssetLibrary\n\n"
+      << "def setp(obj, names, value):\n"
+      << "    # xossa nomi UE versiyalarida farq qiladi — birinchi mosini qo'yamiz\n"
+      << "    for n in (names if isinstance(names, (list, tuple)) else [names]):\n"
+      << "        try:\n"
+      << "            obj.set_editor_property(n, value)\n"
+      << "            return True\n"
+      << "        except Exception:\n"
+      << "            pass\n"
+      << "    unreal.log_warning(\"AsiaCAD: xossa topilmadi: \" + str(names))\n"
+      << "    return False\n\n"
       << "def spawn(cls, loc, rot=unreal.Rotator(0, 0, 0), label=None):\n"
       << "    a = eas.spawn_actor_from_class(cls, loc, rot)\n"
       << "    if a and label: a.set_actor_label(label)\n"
@@ -589,6 +599,9 @@ void writeUnrealScript(const Scene& s, const std::string& pyPath, const UnrealOp
     f << "}\n\n";
     f << "# 2) glTF importi: avval sahna sifatida (Interchange import_scene — tugun o'rinlari saqlanadi), bo'lmasa aktiv sifatida\n"
          "def import_gltf(path, dest):\n"
+         "    if eal.does_directory_exist(dest) and eal.list_assets(dest, recursive=True):\n"
+         "        unreal.log(\"AsiaCAD: \" + dest + \" allaqachon import qilingan — o'tkazildi\")\n"
+         "        return True\n"
          "    try:\n"
          "        im = unreal.InterchangeManager.get_interchange_manager_scripted()\n"
          "        src = unreal.InterchangeManager.create_source_data(path)\n"
@@ -622,28 +635,30 @@ void writeUnrealScript(const Scene& s, const std::string& pyPath, const UnrealOp
     // yorug'lik va atmosfera
     f << "# 3) Quyosh, osmon, bulut, tuman (SunSky bo'lmasa — DirectionalLight + SkyAtmosphere)\n"
          "for a in eas.get_all_level_actors():\n"
-         "    if a.get_actor_label().startswith(\"AC_\") and not isinstance(a, unreal.StaticMeshActor): eas.destroy_actor(a)\n";
+         "    lb = a.get_actor_label()\n"
+         "    if (lb.startswith(\"AC_\") and not isinstance(a, unreal.StaticMeshActor)) or lb in (\"SunSky\", \"ExponentialHeightFog\", \"PostProcessVolume\", \"Floor\"):\n"
+         "        eas.destroy_actor(a)\n";
     f << std::format("sun = spawn(unreal.DirectionalLight, unreal.Vector(0, 0, 0), unreal.Rotator(0, -{:.1f}, {:.1f}), \"AC_Quyosh\")\n",
                      std::max(o.sunElevationDeg, 2.0), std::fmod(o.sunAzimuthDeg + 90.0, 360.0));
     f << "lc = sun.get_component_by_class(unreal.DirectionalLightComponent)\n"
-         "lc.set_editor_property(\"intensity\", 10.0)\n"
-         "lc.set_editor_property(\"atmosphere_sun_light\", True)\n"
-         "lc.set_editor_property(\"dynamic_shadow_distance_movable_light\", 40000.0)\n"
+         "setp(lc, \"intensity\", 10.0)\n"
+         "setp(lc, [\"atmosphere_sun_light\", \"use_as_atmosphere_sun_light\"], True)\n"
+         "setp(lc, \"dynamic_shadow_distance_movable_light\", 40000.0)\n"
          "spawn(unreal.SkyAtmosphere, unreal.Vector(0, 0, 0), label=\"AC_Atmosfera\")\n"
          "sky = spawn(unreal.SkyLight, unreal.Vector(0, 0, 500), label=\"AC_OsmonYorugi\")\n"
-         "sky.get_component_by_class(unreal.SkyLightComponent).set_editor_property(\"real_time_capture\", True)\n"
+         "setp(sky.get_component_by_class(unreal.SkyLightComponent), \"real_time_capture\", True)\n"
          "spawn(unreal.VolumetricCloud, unreal.Vector(0, 0, 0), label=\"AC_Bulutlar\")\n"
          "fog = spawn(unreal.ExponentialHeightFog, unreal.Vector(0, 0, 0), label=\"AC_Tuman\")\n"
          "fc = fog.get_component_by_class(unreal.ExponentialHeightFogComponent)\n"
-         "fc.set_editor_property(\"fog_density\", 0.008)\n"
-         "fc.set_editor_property(\"volumetric_fog\", True)\n"
+         "setp(fc, \"fog_density\", 0.008)\n"
+         "setp(fc, [\"enable_volumetric_fog\", \"volumetric_fog\"], True)\n"
          "pp = spawn(unreal.PostProcessVolume, unreal.Vector(0, 0, 0), label=\"AC_PostProcess\")\n"
-         "pp.set_editor_property(\"unbound\", True)\n"
+         "setp(pp, [\"unbound\", \"infinite_extent\"], True)\n"
          "ps = pp.get_editor_property(\"settings\")\n"
-         "ps.set_editor_property(\"override_auto_exposure_bias\", True); ps.set_editor_property(\"auto_exposure_bias\", 0.5)\n"
-         "ps.set_editor_property(\"override_bloom_intensity\", True); ps.set_editor_property(\"bloom_intensity\", 0.3)\n"
-         "ps.set_editor_property(\"override_vignette_intensity\", True); ps.set_editor_property(\"vignette_intensity\", 0.25)\n"
-         "pp.set_editor_property(\"settings\", ps)\n\n";
+         "setp(ps, \"override_auto_exposure_bias\", True); setp(ps, \"auto_exposure_bias\", 0.5)\n"
+         "setp(ps, \"override_bloom_intensity\", True); setp(ps, \"bloom_intensity\", 0.3)\n"
+         "setp(ps, \"override_vignette_intensity\", True); setp(ps, \"vignette_intensity\", 0.25)\n"
+         "setp(pp, \"settings\", ps)\n\n";
     // kameralar
     const double ex = x1 + span * 0.05, ey = y0 - span * 0.05;
     auto look = [&](double ax, double ay, double az, double bx, double by, double bz) {
@@ -654,10 +669,10 @@ void writeUnrealScript(const Scene& s, const std::string& pyPath, const UnrealOp
     };
     f << "# 4) Kameralar\n";
     f << "cam = spawn(unreal.CineCameraActor, " << ue(ex, ey, z0 + 1.7) << ", " << look(ex, ey, z0 + 1.7, cx, cy, z0 + 5) << ", \"AC_Kamera_Odam\")\n"
-      << "cam.get_cine_camera_component().set_editor_property(\"current_focal_length\", 24.0)\n";
+      << "setp(cam.get_cine_camera_component(), \"current_focal_length\", 24.0)\n";
     const double dxp = cx + span * 0.55, dyp = cy - span * 0.55, dzp = z1 + span * 0.35;
     f << "dron = spawn(unreal.CineCameraActor, " << ue(dxp, dyp, dzp) << ", " << look(dxp, dyp, dzp, cx, cy, z0) << ", \"AC_Kamera_Dron\")\n"
-      << "dron.get_cine_camera_component().set_editor_property(\"current_focal_length\", 35.0)\n\n";
+      << "setp(dron.get_cine_camera_component(), \"current_focal_length\", 35.0)\n\n";
     // markerlar
     f << "# 5) Daraxt / buta / odam / avto: aktivlar jadvali (kind;/Game/.../Mesh.Mesh;balandlik_m) bo'yicha ISM aktorlari\n"
          "MARKERS = [  # kind, x, y, z (UE, sm), balandlik_m, burilish\n";
@@ -707,12 +722,14 @@ void writeUnrealScript(const Scene& s, const std::string& pyPath, const UnrealOp
         f << std::format("    (\"{}\", {:.1f}, {:.1f}, {:.1f}),\n", esc(l.text), (l.p.x - s.origin.x) * 100, -(l.p.y - s.origin.y) * 100, (l.p.z - s.origin.z) * 100);
     f << "]\n"
          "for text, x, y, z in LABELS:\n"
-         "    t = spawn(unreal.TextRenderActor, unreal.Vector(x, y, z + 6000), unreal.Rotator(0, 0, 180), \"AC_Yorliq_\" + text)\n"
+         "    cl = dron.get_actor_location()   # yorliq dron kamerasiga qaraydi (o'qiladigan)\n"
+         "    yaw = math.degrees(math.atan2(cl.y - y, cl.x - x))\n"
+         "    t = spawn(unreal.TextRenderActor, unreal.Vector(x, y, z + 6000), unreal.Rotator(0, 0, yaw), \"AC_Yorliq_\" + text)\n"
          "    tc = t.get_component_by_class(unreal.TextRenderComponent)\n"
          "    tc.set_text(text)\n"
-         "    tc.set_editor_property(\"world_size\", 1200.0)\n"
-         "    tc.set_editor_property(\"horizontal_alignment\", unreal.HorizTextAligment.EHTA_CENTER)\n"
-         "    tc.set_editor_property(\"text_render_color\", unreal.Color(255, 220, 60, 255))\n\n";
+         "    setp(tc, \"world_size\", 1200.0)\n"
+         "    setp(tc, \"horizontal_alignment\", unreal.HorizTextAligment.EHTA_CENTER)\n"
+         "    setp(tc, \"text_render_color\", unreal.Color(255, 220, 60, 255))\n\n";
     // Cesium
     f << "# 7) Cesium for Unreal (bo'lsa): georeferens + Google fotorealistik 3D shahar plitalari\n"
          "if hasattr(unreal, \"CesiumGeoreference\"):\n"
