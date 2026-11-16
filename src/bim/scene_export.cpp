@@ -723,7 +723,7 @@ void writeUnrealScript(const Scene& s, const std::string& pyPath, const UnrealOp
     f << "]\n"
          "for text, x, y, z in LABELS:\n"
          "    cl = dron.get_actor_location()   # yorliq dron kamerasiga qaraydi (o'qiladigan)\n"
-         "    yaw = math.degrees(math.atan2(cl.y - y, cl.x - x))\n"
+         "    yaw = math.degrees(math.atan2(cl.y - y, cl.x - x)) + 180.0   # matn old tomoni kameraga\n"
          "    t = spawn(unreal.TextRenderActor, unreal.Vector(x, y, z + 6000), unreal.Rotator(0, 0, yaw), \"AC_Yorliq_\" + text)\n"
          "    tc = t.get_component_by_class(unreal.TextRenderComponent)\n"
          "    tc.set_text(text)\n"
