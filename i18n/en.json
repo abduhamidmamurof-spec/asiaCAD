@@ -142,7 +142,8 @@
     "EXIT": ["QUIT"],
     "IFCIMPORT": ["IFC"],
     "SHNQ": ["SHNQ", "NORMCHECK"],
-    "SMETA": ["SMETA", "ESTIMATE"]
+    "SMETA": ["SMETA", "ESTIMATE"],
+    "IFCEXPORT": ["IFCOUT"]
   },
   "keywords": {
     "UNDO": [],
@@ -3259,6 +3260,11 @@
     "smeta.xl.col.volume": "Volume, m³",
     "gui.ifc.smeta": "Estimate (5D)",
     "gui.ifc.smeta.tip": "Cost estimate from the BIM model: quantities matched to price base items — Excel (material, labour, machinery, overhead, profit, VAT)",
-    "gui.ifc.smeta.base": "Price base (Excel) — cancel to use the sample base"
+    "gui.ifc.smeta.base": "Price base (Excel) — cancel to use the sample base",
+    "desc.IFCEXPORT": "Export the AsiaCAD model to IFC4 (for BIM submission): storeys, slabs, walls, columns, footings, roof, stairs, windows/doors, openings, materials, Qto quantities (file.ifc [AR|WALLS|BUILDING] [NAME=project])",
+    "ifc.msg.exported": "IFC saved: {0} — {1} storeys, {2} elements, {3} windows, {4} doors, {5} openings, volume {6} m³",
+    "ifc.err.nomodel": "No model to export: run ARMODEL, draw walls (WALL) or put a building plan on its layers first",
+    "ifc.err.write": "Cannot write IFC file: {0}",
+    "gui.act.ifcexport": "IFC export (BIM)"
   }
 }

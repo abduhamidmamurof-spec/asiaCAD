@@ -211,7 +211,7 @@ int main(int argc, char** argv) {
             const QString icon = it.key()->data().toString();
             if (icon == "undo" || icon == "redo" || icon == "search") undoInRibbon += it.value();
             const QString key = act_key(it.key());
-            if (it.value() > 1 && key != "text" && key != "kjimport" && key != "bimimport" && key != "ifcimport" && key != "ifcpanel") ++dup;   // ataylab ikki joyda: matn; KJ/qolip/IFC importi (Fayl va Konstruksiya), IFC modellar (Konstruksiya va Tahlil)
+            if (it.value() > 1 && key != "text" && key != "kjimport" && key != "bimimport" && key != "ifcimport" && key != "ifcexport" && key != "ifcpanel") ++dup;   // ataylab ikki joyda: matn; KJ/qolip/IFC importi (Fayl va Konstruksiya), IFC modellar (Konstruksiya va Tahlil)
         }
         CHECK(undoInRibbon == 0 && dup == 0);
         QStringList qat;
@@ -1780,7 +1780,7 @@ int main(int argc, char** argv) {
                 if (auto* mb = qobject_cast<QMessageBox*>(tw)) mb->accept();
         });
         CHECK(w.importIfc({QStringLiteral("%1/yoq.ifc").arg(ASIACAD_EXAMPLES_DIR)}) == 0 && w.ifcModels().empty());
-        CHECK(w.findChild<QAction*>("act_ifcimport") && w.findChild<QAction*>("act_ifcpanel"));
+        CHECK(w.findChild<QAction*>("act_ifcimport") && w.findChild<QAction*>("act_ifcpanel") && w.findChild<QAction*>("act_ifcexport"));
     }
     // 36. ShNQ tekshiruvi: IFC armatura (4 ta xato), 3D da qizil va belgilar, jadvaldan topish, dalolatnoma, filtr
     {

@@ -142,7 +142,8 @@
     "EXIT": ["ÇIKIŞ"],
     "IFCIMPORT": ["IFC", "IFCAL"],
     "SHNQ": ["SHNQ", "NORMKONTROL"],
-    "SMETA": ["SMETA", "KEŞİF", "KESIF"]
+    "SMETA": ["SMETA", "KEŞİF", "KESIF"],
+    "IFCEXPORT": ["IFCAKTAR"]
   },
   "keywords": {
     "UNDO": ["GERİAL"],
@@ -3259,6 +3260,11 @@
     "smeta.xl.col.volume": "Hacim, m³",
     "gui.ifc.smeta": "Keşif (5D)",
     "gui.ifc.smeta.tip": "BIM modelinden keşif: metrajlar birim fiyat kalemleriyle eşleşir — Excel (malzeme, işçilik, makine, genel gider, kâr, KDV)",
-    "gui.ifc.smeta.base": "Birim fiyat tabanı (Excel) — iptal: örnek taban"
+    "gui.ifc.smeta.base": "Birim fiyat tabanı (Excel) — iptal: örnek taban",
+    "desc.IFCEXPORT": "AsiaCAD modelini IFC4'e aktar (BIM teslimi için): katlar, döşeme, duvar, kolon, temel, çatı, merdiven, pencere/kapı, boşluklar, malzeme, Qto metrajları (dosya.ifc [AR|WALLS|BUILDING] [NAME=proje])",
+    "ifc.msg.exported": "IFC kaydedildi: {0} — {1} kat, {2} eleman, {3} pencere, {4} kapı, {5} boşluk, hacim {6} m³",
+    "ifc.err.nomodel": "Aktarılacak model yok: önce ARMODEL çalıştırın, duvar çizin (WALL) veya bina planını katmanlara yerleştirin",
+    "ifc.err.write": "IFC dosyası yazılamadı: {0}",
+    "gui.act.ifcexport": "IFC dışa aktar (BIM)"
   }
 }

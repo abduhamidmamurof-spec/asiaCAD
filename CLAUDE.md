@@ -20,7 +20,8 @@ Modullar, buyruqlar va versiyalar bo'yicha batafsil — `README.md`.
   Video: kamera yo'li (`video_dialog.*`, EXPORT3D CAMPATH=/ORBIT=).
 - v0.39: BIM modeldan smeta (5D) — `SMETA` buyrug'i, `src/bim/smeta.*`, IFC oynasi › *Smeta (5D)*: IFC Qto yoki geometriyadan
   miqdorlar -> narxlar bazasi (Excel, foydalanuvchi to'ldiradi) -> material/ish haqi/mashina, ustama, foyda, QQS -> Excel smeta.
-- Testlar: yadro — `187 test, 2922 tekshiruv, 0 xato`; GUI — `648 tekshiruv, 0 xato`.
+  `IFCEXPORT` (`src/bim/ifc_export.*`): ARMODEL / devorlar / bino rejasi -> IFC4 (qavatlar, teshiklar, material, Qto).
+- Testlar: yadro — `188 test, 2937 tekshiruv, 0 xato`; GUI — `648 tekshiruv, 0 xato`.
 
 ## Yig'ish va testlar (Linux)
 
@@ -105,7 +106,7 @@ Tartib bilan, har biri alohida modul (ochilishda faqat chizma yadrosi yuklanadi)
 6. ✅ (v0.38) Arxitektura: aqlli devor / eshik / deraza, xona maydonlari (brutto/netto, ijaraga beriladigan), kesim va ko'rinish, pafta + PDF.
 7. (yadro ✅ v0.35 `FEM`: sterjen, statik/modal/spektral CQC, tekshiruv testlari; ✅ v0.37 `QLOAD`, spektral element kuchlari, `FEM DESIGN` — temirbeton oldindan o'lchamlash qizil-yashil; ✅ v0.38 qobiq MITC4 va GUI oynasi) Statika: o'z 3D FEM yechuvchisi (sterjen + qobiq), modal + spektral (ShNQ 2.01.03-19), oldindan o'lchamlash (ustun/perda/rigel/plita,
    qizil-yashil), temir-beton loyihalash → armatura paftasi, SCAD/ETABS bilan solishtiruvchi tekshiruv misollari (sertifikat uchun).
-8. (v0.39 asosi ✅ `SMETA`) BIM — AsiaCAD «mahalliy BIM markazi» (foydalanuvchi maqsadi: keng tarqalgan dastur, Qurilish vazirligi BIM talab qila boshladi):
+8. (v0.39 asosi ✅ `SMETA`, ✅ `IFCEXPORT`) BIM — AsiaCAD «mahalliy BIM markazi» (foydalanuvchi maqsadi: keng tarqalgan dastur, Qurilish vazirligi BIM talab qila boshladi):
    istalgan dasturdan IFC -> 5D smeta (mahalliy narxlar bazasi va format), ShNQ model tekshiruvi, KJ, infratuzilma, 4D qurilish nazorati,
    so'ng — o'z BIM modellash (devor/plita/ustun). Keyingi qadam: foydalanuvchining haqiqiy IFC modeli + smeta Excel + narxlar bazasi bilan
    solishtirish va formatni moslash. Tayyor bo'lganda — Adliya vazirligida dasturni ro'yxatdan o'tkazish (patent) uchun foydalanuvchiga xabar berish.

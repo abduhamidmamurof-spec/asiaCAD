@@ -192,6 +192,7 @@ const ActDef kActs[] = {
     {"recent", "recent", "gui.act.recent", false},
     {"kjimport", "rebar+imp", "gui.act.kjimport", false}, {"bimimport", "bim+imp", "gui.act.bimimport", false},
     {"ifcimport", "ifc+imp", "gui.act.ifcimport", false}, {"ifcpanel", "ifctree", "gui.act.ifcpanel", false},
+    {"ifcexport", "ifc+exp", "gui.act.ifcexport", false},
     {"normcheck", "shnq", "gui.act.normcheck", false}, {"normrules", "rules", "gui.act.normrules", false},
     {"view2d", "view2d", "gui.act.view2d", false},
     {"cam3d", "camera", "gui.act.cam3d", false},  {"cut3d", "cut", "gui.act.cut3d", false},
@@ -698,6 +699,14 @@ void MainWindow::buildActions() {
         importIfc(files);
     });
     connect(act_["ifcpanel"], &QAction::triggered, this, [this] { openIfcPanel(); });
+    // IFC eksport (BIM topshirish): ARMODEL / devorlar / bino rejasi -> IFC4
+    connect(act_["ifcexport"], &QAction::triggered, this, [this] {
+        QString f = QFileDialog::getSaveFileName(this, t("gui.act.ifcexport"), lastDir_, t("gui.ifc.filter"));
+        if (f.isEmpty()) return;
+        if (!f.endsWith(QLatin1String(".ifc"), Qt::CaseInsensitive)) f += QStringLiteral(".ifc");
+        lastDir_ = QFileInfo(f).absolutePath();
+        runLine(QStringLiteral("IFCEXPORT \"%1\"").arg(f));
+    });
     // ShNQ tekshiruvi: IFC model bo'lsa — joriy model; aks holda "Monolit bino" (o'z oynasida qizil bilan)
     connect(act_["normcheck"], &QAction::triggered, this, [this] {
         if (!ifc_.empty()) {
@@ -1039,7 +1048,7 @@ void MainWindow::buildRibbon() {
     struct Page { const char* title; std::vector<Group> groups; };
     const std::vector<Page> pages = {
         {"gui.tab.file", {{"gui.grp.document", {"new", "open", "recent", "save", "saveas"}},
-                          {"gui.grp.exchange", {"import", "export"}, {"ifcimport", "bimimport", "kjimport"}},
+                          {"gui.grp.exchange", {"import", "export"}, {"ifcimport", "ifcexport", "bimimport", "kjimport"}},
                           {"gui.grp.project", {"projset"}}}},
         {"gui.tab.draw", {{"gui.grp.draw", {"line", "pline", "circle", "arc"}, {"rect", "polygon", "ellipse", "spline", "point", "hatch"}, true},
                           {"gui.grp.textsym", {"text", "symbols"}},
@@ -1061,7 +1070,7 @@ void MainWindow::buildRibbon() {
         {"gui.tab.struct", {{"gui.grp.steelkm", {"steelframe", "steel"}},
                             {"gui.grp.elements", {"stairtpl", "ramptpl", "rwalltpl"}},
                             {"gui.grp.concrete", {"building", "rebar"}},
-                            {"gui.grp.bim", {"ifcimport", "ifcpanel"}},
+                            {"gui.grp.bim", {"ifcimport", "ifcexport", "ifcpanel"}},
                             {"gui.grp.import", {"bimimport", "kjimport"}},
                             {"gui.grp.district", {"city"}}}},
         {"gui.tab.arch", {{"gui.grp.archdraw", {"wall", "door", "window", "room"}, {"rooms", "arsection", "arsheet", "ar3d"}},

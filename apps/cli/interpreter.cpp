@@ -6,6 +6,8 @@
 #include <asiacad/bim/ifc.h>
 #include <asiacad/bim/norms.h>
 #include <asiacad/bim/smeta.h>
+#include <asiacad/bim/ifc_export.h>
+#include <asiacad/bim/arch.h>
 #include <asiacad/civil/drawset.h>
 #include <asiacad/bim/rebar.h>
 #include <asiacad/civil/excel.h>
@@ -127,6 +129,7 @@ const char* commandSyntax(const std::string& c) {
         {"ARMODEL", "file.dxf|- [floors] [H]"},
         {"IFCIMPORT", "file.ifc [{LOCAL}]"},
         {"SHNQ", "file.ifc [rules.json] | {RULES} out.json"},
+        {"IFCEXPORT", "file.ifc [AR|WALLS|BUILDING] [NAME=project]"},
         {"SMETA", "file.ifc [BASE=base.xlsx] [XLSX=smeta.xlsx] [OVERHEAD=%] [PROFIT=%] [VAT=%] | {SAMPLE} base.xlsx"},
         {"ROAD", "[file.json] [+] [x,y]"},
         {"WATERWAY", "[file.json] [Q=m3/s] [SEC=n] [+] [x,y]"},
@@ -841,6 +844,34 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
         for (const auto& w : m.warnings)
             out_ << "  " << loc_.tr("sewer.lvl.warning") << ": "
                  << loc_.tr(w, {std::to_string(m.openings - m.openingsCut), std::to_string(m.openings), std::to_string(m.skipped)}) << '\n';
+    } else if (cmd == "IFCEXPORT") {
+        // AsiaCAD modeli -> IFC4 (BIM topshirish): ARMODEL natijasi, arxitektura devorlari yoki chizmadagi bino rejasi
+        need(a, 1, cmd);
+        std::string src, name;
+        for (std::size_t i = 1; i < a.size(); ++i) {
+            const std::string u = utf8::toUpper(a[i]);
+            if (u.rfind("NAME=", 0) == 0) name = a[i].substr(5);
+            else if (u == "AR" || u == "WALLS" || u == "BUILDING") src = u;
+            else throw Error("err.usage", {loc_.commandName(cmd) + " " + localizeSyntax(loc_, commandSyntax(cmd))});
+        }
+        bim::IfcExportInput in;
+        in.project = name.empty() ? std::filesystem::path(a[0]).stem().string() : name;
+        in.building = in.project;
+        std::optional<bim::BuildingModel> bm;
+        if ((src.empty() || src == "AR") && lastAr_) bm = *lastAr_;
+        if (src.empty() || src == "WALLS") in.walls = bim::wallsFromDoc(doc_);
+        if (!bm && (src.empty() ? in.walls.empty() : src == "BUILDING")) {
+            bim::BuildingParams bp;
+            auto lm = bim::autoLayerMap(doc_);
+            if (const std::string pj = doc_.dictGet("bim:params"); !pj.empty()) bim::paramsFromJson(pj, bp, lm);
+            const auto plan = bim::readPlan(doc_, lm);
+            if (!plan.empty()) bm = bim::buildModel(plan, bp);
+        }
+        if (bm) in.model = &*bm;
+        if (!in.model && in.walls.empty()) throw Error("ifc.err.nomodel");
+        const auto stt = bim::writeIfcFile(in, a[0]);
+        say("ifc.msg.exported", {a[0], std::to_string(stt.storeys), std::to_string(stt.elements), std::to_string(stt.windows), std::to_string(stt.doors),
+                                 std::to_string(stt.openings), std::format("{:.2f}", stt.volume)});
     } else if (cmd == "SMETA") {
         // BIM modeldan smeta (5D): IFC -> hajmlar (QTO) -> narxlar bazasi kalimlari -> Excel smeta
         need(a, 1, cmd);

@@ -16,6 +16,7 @@
 #include <asiacad/bim/ifc.h>
 #include <asiacad/bim/norms.h>
 #include <asiacad/bim/smeta.h>
+#include <asiacad/bim/ifc_export.h>
 #include <asiacad/civil/survey.h>
 #include <asiacad/civil/terrain.h>
 #include <asiacad/civil/excel.h>
@@ -368,7 +369,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT" || c == "LAYON" || c == "LAYUNISO" || c == "DEVCLEAR");
     }
-    CHECK(loc.canonicalCommands().size() == 141);
+    CHECK(loc.canonicalCommands().size() == 142);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -3267,6 +3268,71 @@ TEST(ifc_cli_and_ifczip) {
 }
 
 // ---------------------------------------------------------------- BIM smeta (5D)
+TEST(ifc_export_roundtrip) {
+    // bino modeli: fundament plita, 1-qavat ustun + plita (teshik bilan), deraza; arxitektura devori eshik/deraza bilan
+    bim::BuildingModel bm;
+    bim::Prism f;
+    f.kind = bim::ElemKind::FoundationSlab;
+    f.level = 0;
+    f.outline = {{0, 0, 0}, {10, 0, 0}, {10, 8, 0}, {0, 8, 0}};
+    f.z0 = -0.6; f.z1 = 0; f.concrete = "B25";
+    bim::Prism c;
+    c.kind = bim::ElemKind::Column;
+    c.level = 1;
+    c.outline = {{0, 0, 0}, {0.4, 0, 0}, {0.4, 0.4, 0}, {0, 0.4, 0}};
+    c.z0 = 0; c.z1 = 3; c.concrete = "B30";
+    bim::Prism sl;
+    sl.kind = bim::ElemKind::Slab;
+    sl.level = 1;
+    sl.outline = f.outline;
+    sl.holes = {{{2, 2, 0}, {4, 2, 0}, {4, 4, 0}, {2, 4, 0}}};
+    sl.z0 = 3; sl.z1 = 3.2; sl.concrete = "B25";
+    bm.prisms = {f, c, sl};
+    bim::GlassPane g;
+    g.level = 1;
+    g.quad = {{5, 0, 1}, {6.5, 0, 1}, {6.5, 0, 2.5}, {5, 0, 2.5}};
+    bm.glass = {g};
+    bim::IfcExportInput in;
+    in.project = "Sinov uyi — Toshkent";
+    in.building = "A blok";
+    in.author = "Ma'murov";
+    in.model = &bm;
+    auto ws = bim::makeWallChain({{20, 0, 0}, {26, 0, 0}}, 0.3, 3.0, 'C', false, "W");
+    CHECK(ws.size() == 1);
+    ws[0].ops = {{'D', 1.5, 0.9, 2.1, 0}, {'W', 4.0, 1.2, 1.5, 0.9}};
+    in.walls = ws;
+    bim::IfcExportStats st;
+    const std::string txt = bim::ifcExportText(in, &st);
+    CHECK(txt.find("FILE_SCHEMA(('IFC4'))") != std::string::npos && txt.find("\\X2\\2014\\X0\\") != std::string::npos);
+    CHECK(st.storeys == 2 && st.elements == 4 && st.windows == 2 && st.doors == 1 && st.openings == 2);
+    bim::IfcModel m;
+    std::string err;
+    CHECK(bim::parseIfc(txt, m, err, false));
+    CHECK(m.schema == "IFC4" && m.storeys.size() == 2 && m.openings == 2);
+    std::map<std::string, int> cnt;
+    for (const auto& e : m.elements) cnt[e.type]++;
+    CHECK(cnt["IFCSLAB"] == 2 && cnt["IFCCOLUMN"] == 1 && cnt["IFCWALL"] == 1 && cnt["IFCWINDOW"] == 2 && cnt["IFCDOOR"] == 1);
+    for (const auto& e : m.elements) {
+        if (e.type == "IFCCOLUMN") CHECK(std::abs(e.volume - 0.48) < 1e-6 && e.material == "Beton B30" && std::abs(e.box.max.z - 3) < 1e-6);
+        if (e.type == "IFCSLAB" && e.predefined == "FLOOR") CHECK(std::abs(e.volume - (80 - 4) * 0.2) < 1e-6 && std::abs(e.box.min.z - 3) < 1e-6);
+        if (e.type == "IFCSLAB" && e.predefined == "BASESLAB") CHECK(std::abs(e.box.min.z + 0.6) < 1e-6);
+        if (e.type == "IFCWALL") {
+            bool q = false;
+            for (const auto& [k, v] : e.props)
+                if (k == "Qto_WallBaseQuantities.NetVolume") q = std::abs(std::stod(v) - (6 * 0.3 * 3 - (0.9 * 2.1 + 1.2 * 1.5) * 0.3)) < 1e-6;
+            CHECK(q);
+        }
+    }
+    // smeta shu fayldan ishlaydi (IFC -> 5D)
+    const auto r = bim::computeSmeta(m, bim::defaultSmetaBase());
+    CHECK(r.elements == 7 && r.matched >= 4);
+    // guid: 22 belgi, takrorlanmas
+    CHECK(bim::ifcGuid("a").size() == 22 && bim::ifcGuid("a") != bim::ifcGuid("b") && bim::ifcEncodeString("O'z") == "O''z");
+    // buyruq: modelsiz — xato; devor chizilgandan so'ng — fayl
+    const auto path = (std::filesystem::temp_directory_path() / "asiacad_export.ifc").string();
+    const auto s1 = runScript("uz", {"IFCEKSPORT \"" + path + "\""});
+    CHECK(s1.find("Eksport uchun model yoʻq") != std::string::npos);
+}
 TEST(smeta_from_ifc_model) {
     bim::IfcModel m;
     std::string err;

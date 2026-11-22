@@ -272,6 +272,18 @@ QIcon makeIcon(const QString& name, const QColor& fg, const QColor& bg, int size
         p.drawLine(QPointF(19, 12.5), QPointF(19, 22));
         p.drawLine(QPointF(15.5, 18.5), QPointF(19, 22));
         p.drawLine(QPointF(22.5, 18.5), QPointF(19, 22));
+    } else if (name.endsWith(QLatin1String("+exp"))) {
+        // eksport belgisi: o'ng yuqorida "chiqish" strelkasi (faylga berish)
+        p.save();
+        p.scale(0.78, 0.78);
+        glyph(p, name.chopped(4));
+        p.restore();
+        QPen ap = p.pen();
+        ap.setWidthF(2.4);
+        p.setPen(ap);
+        p.drawLine(QPointF(19, 22), QPointF(19, 12.5));
+        p.drawLine(QPointF(15.5, 16), QPointF(19, 12.5));
+        p.drawLine(QPointF(22.5, 16), QPointF(19, 12.5));
     } else {
         glyph(p, name);
     }

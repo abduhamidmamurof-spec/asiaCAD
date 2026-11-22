@@ -142,7 +142,8 @@
     "EXIT": ["CHIQISH", "ЧИҚИШ"],
     "IFCIMPORT": ["IFC", "IFCYUKLA"],
     "SHNQ": ["SHNQ", "ШНҚ"],
-    "SMETA": ["SMETA", "СМЕТА"]
+    "SMETA": ["SMETA", "СМЕТА"],
+    "IFCEXPORT": ["IFCEKSPORT", "ИФЦЭКСПОРТ"]
   },
   "keywords": {
     "UNDO": ["ORTGA", "ОРТГА"],
@@ -3259,6 +3260,11 @@
     "smeta.xl.col.volume": "Hajm, m³",
     "gui.ifc.smeta": "Smeta (5D)",
     "gui.ifc.smeta.tip": "BIM modeldan smeta: hajmlar narxlar bazasi kalimlariga moslanadi — Excel (material, ish haqi, mashina, ustama, foyda, QQS)",
-    "gui.ifc.smeta.base": "Narxlar bazasi (Excel) — bekor qilsangiz namuna baza"
+    "gui.ifc.smeta.base": "Narxlar bazasi (Excel) — bekor qilsangiz namuna baza",
+    "desc.IFCEXPORT": "AsiaCAD modelini IFC4 ga eksport (BIM topshirish uchun): qavatlar, plita, devor, ustun, fundament, tom, zina, deraza/eshik, teshiklar, material, Qto hajmlari (fayl.ifc [AR|WALLS|BUILDING] [NAME=loyiha])",
+    "ifc.msg.exported": "IFC saqlandi: {0} — {1} ta qavat, {2} ta element, {3} ta deraza, {4} ta eshik, {5} ta teshik, hajm {6} m³",
+    "ifc.err.nomodel": "Eksport uchun model yoʻq: avval ARMODEL bajaring, devor chizing (WALL) yoki bino rejasini qatlamlarga joylang",
+    "ifc.err.write": "IFC fayl yozilmadi: {0}",
+    "gui.act.ifcexport": "IFC eksport (BIM)"
   }
 }

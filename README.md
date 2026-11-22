@@ -830,6 +830,23 @@ hisoblanadi. Miqdorlar narxlar bazasidagi ish kalimlariga moslanadi, so'ng to'g'
 - Testlar: `smeta_from_ifc_model`, `smeta_base_workbook_and_cli` (Revit uslubidagi sinov IFC: devor "Beton B25" — monolit devor
   kalimi, armatura kg→t, Qto ustunligi, narx zanjiri, Excel formulalari).
 
+
+## IFC eksport — BIM topshirish (v0.39)
+
+`IFCEXPORT fayl.ifc [AR|WALLS|BUILDING] [NAME=loyiha]` (uz: `IFCEKSPORT`; GUI: Fayl › Almashinuv va Konstruksiya › BIM — *IFC eksport (BIM)*)
+AsiaCAD modelini IFC4 (ReferenceView) ga yozadi — Revit, ArchiCAD, Navisworks, BIMcollab va Vazirlik ekspertizasi o'qiydi:
+
+- manba: `AR` — oxirgi ARMODEL natijasi; `WALLS` — chizmadagi arxitektura devorlari (WALL/DOOR/WINDOW); `BUILDING` — qatlamlardagi bino rejasi
+  (`buildModel`); ko'rsatilmasa — mavjudlari avtomatik;
+- tuzilma: IfcProject → IfcSite → IfcBuilding → IfcBuildingStorey (fundament, 1..N-qavat, belgisi bilan);
+- elementlar: IfcSlab (FLOOR / ROOF / BASESLAB), IfcFooting, IfcColumn, IfcWall, IfcStair, IfcWindow, IfcDoor — IfcExtrudedAreaSolid
+  (teshikli plitalar — IfcArbitraryProfileDefWithVoids);
+- devor teshiklari: IfcOpeningElement + IfcRelVoidsElement, deraza/eshik — IfcRelFillsElement;
+- material (`Beton B25`, gazoblok, shisha) — IfcRelAssociatesMaterial; Qto_*BaseQuantities (NetVolume, NetArea) — smeta (5D) shu fayldan to'g'ridan-to'g'ri;
+- GUID — barqaror (loyiha nomi + element), UTF-8 nomlar `\X2\` bilan.
+
+Tekshiruv: `ifc_export_roundtrip` testi — eksport → `readIfc` → hajmlar, qavatlar, teshiklar, smeta; IfcOpenShell schema tekshiruvi — 0 xato.
+
 ## Render uchun 3D sahna (v0.34)
 
 - **EXPORT3D fayl.gltf|fayl.obj [IFC=fayl.ifc [SHELL] [IFCCOLORS]] [BUILDING] [GENPLAN] [NOMARKERS] [DATE=2026-06-21] [TIME=16:00] [MAX=sahna.ms [RENDERER=CORONA|VRAY|PHYSICAL]]** — D5 Render,

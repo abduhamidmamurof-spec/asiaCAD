@@ -74,6 +74,7 @@ add_library(asiacad_civil
   src/bim/ifc.cpp
   src/bim/norms.cpp
   src/bim/smeta.cpp
+  src/bim/ifc_export.cpp
   src/bim/seismic.cpp
   src/bim/geotech.cpp
   src/bim/scene_export.cpp
