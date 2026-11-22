@@ -5648,10 +5648,13 @@ TEST(cli_plot_pdf) {
                                     "TEXT 10,100 5 \"Привет gʻisht ğş\"", "PLOT \"" + f1 + "\" A4 SCALE=1:1",
                                     "SHEET NEW L-1 A3", "SHEET VIEW L-1 0,0 0.2,0.12", "PLOT \"" + f2 + "\" SHEET=ALL MONO", "PLOT \"" + f2 + "\" A9"});
     CHECK(s.find("1 page(s), scale 1:1") != std::string::npos);
-    std::ifstream in(f1, std::ios::binary);
-    std::stringstream ss;
-    ss << in.rdbuf();
-    const std::string pdf = ss.str();
+    std::string pdf;
+    {   // Windows: fayl yopilmasa remove_all qulaydi
+        std::ifstream in(f1, std::ios::binary);
+        std::stringstream ss;
+        ss << in.rdbuf();
+        pdf = ss.str();
+    }
     CHECK(pdf.rfind("%PDF-1.4", 0) == 0 && pdf.find("%%EOF") != std::string::npos);
     const bool ttf = pdf.find("/FontFile2") != std::string::npos;
     CHECK(ttf || pdf.find("/Helvetica") != std::string::npos);
@@ -5659,7 +5662,8 @@ TEST(cli_plot_pdf) {
     CHECK(pdf.find(" Tj ET") != std::string::npos);
     CHECK(fs::file_size(f2) > 1000);
     CHECK(s.find("Plot error: paper: A9") != std::string::npos);
-    fs::remove_all(dir);
+    std::error_code ec;
+    fs::remove_all(dir, ec);
 }
 TEST(arch_walls_rooms_section) {
     namespace fs = std::filesystem;
@@ -5782,14 +5786,16 @@ TEST(camera_path_export) {
     const auto s = runScript("en", {"WALL 0,0 10,0 10,8 0,8 CLOSE", "AR3D", "PLINE -5,-5 15,-5 15,13",
                                     "EXPORT3D \"" + gl + "\" CAMPATH=LAST ORBIT=20 FPS=25 MAX=\"" + ms + "\" UNREAL=\"" + py + "\""});
     CHECK(s.find("Camera path:") != std::string::npos);
-    std::ifstream u(py);
-    std::stringstream us;
-    us << u.rdbuf();
-    CHECK(us.str().find("make_sequence(\"AC_Kamera_Yol\", 25") != std::string::npos && us.str().find("make_sequence(\"AC_Kamera_Dron_Aylanish\"") != std::string::npos);
-    std::ifstream mx(ms);
-    std::stringstream mss;
-    mss << mx.rdbuf();
-    CHECK(mss.str().find("animate on") != std::string::npos && mss.str().find("camYol2") != std::string::npos);
+    auto slurp = [](const std::string& f) {   // Windows: fayl darhol yopiladi (remove_all uchun)
+        std::ifstream in(f);
+        std::stringstream ss;
+        ss << in.rdbuf();
+        return ss.str();
+    };
+    const std::string ustr = slurp(py), mstr = slurp(ms);
+    CHECK(ustr.find("make_sequence(\"AC_Kamera_Yol\", 25") != std::string::npos && ustr.find("make_sequence(\"AC_Kamera_Dron_Aylanish\"") != std::string::npos);
+    CHECK(mstr.find("animate on") != std::string::npos && mstr.find("camYol2") != std::string::npos);
     CHECK(fs::exists(dir / "s_kamera.csv"));
-    fs::remove_all(dir);
+    std::error_code ec;
+    fs::remove_all(dir, ec);
 }
