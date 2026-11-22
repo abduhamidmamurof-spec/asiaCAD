@@ -25,6 +25,7 @@ void glyph(QPainter& p, const QString& n) {
     auto dot = [&](double x, double y, double r = 1.6) {
         p.save(); p.setBrush(p.pen().color()); C(x, y, r); p.restore();
     };
+    bool done = true;
     if (n == "new") { P({{6, 3}, {14, 3}, {19, 8}, {19, 21}, {6, 21}}, true); P({{14, 3}, {14, 8}, {19, 8}}); L(12.5, 11, 12.5, 18); L(9, 14.5, 16, 14.5); }
     else if (n == "open") { P({{3, 7}, {9, 7}, {11, 9}, {21, 9}, {21, 19}, {3, 19}}, true); L(3, 12, 21, 12); }
     else if (n == "save") { P({{4, 4}, {17, 4}, {20, 7}, {20, 20}, {4, 20}}, true); R(8, 4, 8, 5, 0.5); R(7, 13, 10, 7, 0.5); }
@@ -104,7 +105,9 @@ void glyph(QPainter& p, const QString& n) {
     else if (n == "sections") {  // ko'ndalang kesim: yer, loyiha trapetsiya, shtrix
         QPainterPath g; g.moveTo(2, 9); g.cubicTo(8, 6, 15, 12, 22, 8); p.drawPath(g); P({{3, 17}, {7, 12}, {17, 12}, {21, 17}}); L(12, 4, 12, 21); L(2, 21, 22, 21);
     }
-    else if (n == "cartogram") {  // to'r + nol chizig'i
+    else done = false;
+    if (done) return;   // MSVC: else-if zanjiri 128 dan chuqur bo'lmasin (C1061)
+    if (n == "cartogram") {  // to'r + nol chizig'i
         for (int i = 0; i < 4; ++i) { L(3 + i * 6, 3, 3 + i * 6, 21); L(3, 3 + i * 6, 21, 3 + i * 6); }
         p.save(); QPen d = p.pen(); d.setWidthF(d.widthF() * 1.6); p.setPen(d); QPainterPath z; z.moveTo(3, 18); z.cubicTo(9, 14, 12, 10, 21, 5); p.drawPath(z); p.restore();
     }
