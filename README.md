@@ -808,6 +808,28 @@ Normaga mos kelmagan elementlar 3D da qizil (xato) yoki sariq (ogohlantirish) bo
 - Menyu `Tarmoqlar → Genreja`: qatlamlar jadvali — har qatlam uchun hudud turi (inson tuzatishi → MAP), bordyur enlari,
   joy o'lchami, jonli ko'rinish.
 
+## BIM modeldan smeta — 5D (v0.39) — `src/bim/smeta.*`, `SMETA` buyrug'i, IFC oynasi › *Smeta (5D)*
+
+Revit, ArchiCAD, Tekla, Renga va boshqa dasturlardan IFC modeli olinadi va undan smeta hisoblanadi (Revit kerak emas).
+Har elementning miqdori modeldan olinadi: hajm, yon sirt yuzasi, ustki sirt yuzasi, uzunlik, son, armatura massasi, deraza/eshik
+o'lchami. IFC'da `Qto_*BaseQuantities` (NetVolume, NetSideArea, NetArea, Length) bo'lsa — ular ishlatiladi, bo'lmasa geometriyadan
+hisoblanadi. Miqdorlar narxlar bazasidagi ish kalimlariga moslanadi, so'ng to'g'ridan-to'g'ri xarajat, ustama, foyda va QQS hisoblanadi.
+
+- **SMETA fayl.ifc [BASE=baza.xlsx] [XLSX=smeta.xlsx] [OVERHEAD=%] [PROFIT=%] [VAT=%]** — konsolga kalimlar va jami,
+  Excel'ga uch varaq:
+  - *Smeta* — bo'limlar bo'yicha kalimlar: miqdor, birlik narxi, jami; formulalar bilan, Excel ochilganda qayta hisoblanadi;
+  - *Hajmlar* — har element: GUID, toifa, qavat, material, kalim kodi, miqdor;
+  - *Moslanmagan* — bazada kalimi yo'q elementlar (toifa, soni, hajmi).
+- **SMETA NAMUNA baza.xlsx** — narxlar bazasi shabloni (17 ta namuna kalim, narxlar shartli). Foydalanuvchi o'z birlik
+  narxlarini kiritadi. Ustunlar: Kod, Ish nomi, Bo'lim, Birlik, O'lchov (VOLUME | AREA | PLAN | LENGTH | COUNT | MASS | OPENING),
+  Koeffitsient (isrof, kg→t), Material, Ish haqi, Mashina, IFC toifa (WALL|SLAB…), IFC tur, Material kaliti (BETON|CONCRETE),
+  Nom kaliti, PredefinedType, Davom (1 — element keyingi kalimlarga ham yoziladi). Ikkinchi varaqda — nomi, valyuta, ustama %,
+  foyda %, QQS %. Kalimlar tartib bilan tekshiriladi, element birinchi mos kelganiga yoziladi.
+- GUI: IFC modellar oynasi › **Smeta (5D)** — narxlar bazasi tanlanadi (bekor qilinsa — namuna baza), Excel saqlanadi.
+- Buyruq nomlari: SMETA / СМЕТА (uz, ru, kk, ky), ESTIMATE (en), KEŞİF (tr).
+- Testlar: `smeta_from_ifc_model`, `smeta_base_workbook_and_cli` (Revit uslubidagi sinov IFC: devor "Beton B25" — monolit devor
+  kalimi, armatura kg→t, Qto ustunligi, narx zanjiri, Excel formulalari).
+
 ## Render uchun 3D sahna (v0.34)
 
 - **EXPORT3D fayl.gltf|fayl.obj [IFC=fayl.ifc [SHELL] [IFCCOLORS]] [BUILDING] [GENPLAN] [NOMARKERS] [DATE=2026-06-21] [TIME=16:00] [MAX=sahna.ms [RENDERER=CORONA|VRAY|PHYSICAL]]** — D5 Render,
@@ -879,6 +901,88 @@ Bitta DWG/DXF faylidagi qavat rejalari va kesimlardan 3D bino (lenta: **Arxitekt
 - `ARMODEL fayl.dxf|- [qavatlar] [qavat balandligi]` — `-` joriy chizma. Natija asosiy oynaning 3D ko'rinishida.
 - Namuna: `examples/ar_loyiha/ar_loyiha.dxf` (`make_ar.py` bilan yaratilgan, sintetik). Testlar: `ar_title_and_floor_chain`,
   `ar_project_from_plans_and_section`.
+
+## Qo'shimcha chizma buyruqlari (v0.38) — `apps/cli/interpreter_draft2.cpp`
+
+Lenta: **O'lcham va annotatsiya** (Zanjir, Bazaviy, Ko'p qatorli matn, Bo'lish, Qadamlash, Tozalash).
+
+- `MTEXT p h "1-qator|2-qator" [W=kenglik] [J=TL..BR] [ROT=°] [LS=1]` — ko'p qatorli matn (`\P` yoki `|` — yangi qator, `W=` — so'z bo'yicha o'rash).
+- `DIMCONTINUE p [p …] [BASE=id]` — zanjirli o'lcham; `DIMBASELINE p [p …] [STEP=d]` — bir tayanchdan bazaviy o'lchamlar.
+- `DIVIDE tanlov n [BLOCK=nom] [ALIGN]` / `MEASURE tanlov d …` — egri chiziq bo'ylab nuqta yoki blok.
+- `PURGE [LAYERS|BLOCKS] [LIST]` — ishlatilmagan qatlam va bloklar (ichma-ich bloklar ham); undo qilinadi.
+- Test: `cli_draft2_commands`.
+
+## PDF chop etish (v0.38) — `src/io/pdf_writer.cpp`, `PLOT`
+
+- `PLOT fayl.pdf [A0..A4] [PORTRAIT] [WINDOW=x1,y1,x2,y2] [SCALE=1:100] [UNITS=1000] [MONO] [LW=0.25]` — model oynasi vektor PDF ga;
+  `PLOT fayl.pdf SHEET=nom|ALL` — listlar (GOST ramka, shtamp, ko'rinishlar).
+- Matn TrueType shrift bilan (Windows: Arial, Linux: DejaVu Sans) — faqat ishlatilgan belgilar joylanadi (qism-shrift),
+  kirill, o'zbek (ʻ ʼ), turk harflari to'g'ri; PDF ichida matn qidiriladi va nusxalanadi (ToUnicode).
+- Shtrixlar (SOLID — to'ldirish, naqsh — chiziqlar), o'lchamlar, bloklar, qatlam ranglari (och ranglar qog'ozda to'qlashtiriladi).
+- Lenta: **Tahlil → PDF chop etish**. Test: `cli_plot_pdf`.
+
+## Arxitektura: devor, eshik, deraza, xona, kesim (v0.38) — `src/bim/arch.*`, `apps/cli/interpreter_arch.cpp`
+
+Lenta: **Arxitektura → Devorlar va xonalar**. Birlik — metr.
+- `WALL p1 p2 … [T=0.3] [H=3] [J=C|L|R] [CLOSE]` — aqlli devorlar: burchaklar qiyshiq kesim bilan, T-tutashuv qo'shni devor
+  yuzigacha qisqaradi. Devor obyektlari xdata bilan (`aw.wall`, `aw.def`, `aw.ops`) — .acad da saqlanadi.
+- `DOOR p [W=0.9] [H=2.1] [RIGHT] [OUT]`, `WINDOW p [W=1.5] [H=1.5] [SILL=0.9]` — eng yaqin devorga; devor qayta chiziladi
+  (eshik tabaqasi va ochilish yoyi, deraza — 4 chiziq). Sig'masa yoki boshqa teshikka tegsa — xato. `… DEL` — olib tashlash.
+- `ROOM p [NAME=..] [TYPE=LIVING|OFFICE|CORRIDOR|WC…] [RENT=0|1]` — devor o'qlari tekis grafidan xona: netto (ichki yuzlar,
+  har devor o'z qalinligi bilan), o'qlar bo'yicha maydon, perimetr; yozuv.
+- `ROOMS [XLSX=f]` — eksplikatsiya: netto jami, ijaraga beriladigan, bino brutto (tashqi yuz bo'yicha).
+- `ARSECTION p1 p2 AT=x,y [FLOORS=n] [SLAB=0.2]` — kesim (kesilgan devorlar shtrixli, teshiklar, plitalar, sath belgilari);
+  chiziq binodan tashqarida bo'lsa — fasad ko'rinishi (yaqinroq devor orqasidagilar yashiriladi). Rejada kesim belgisi.
+- `ARSHEET nom [A1]` — reja va kesimlar bilan list; so'ng `PLOT f.pdf SHEET=nom`. `AR3D [FLOORS=n]` — devorlar (teshiklar bilan)
+  va plitalar 3D (render eksporti ham shu modelni oladi).
+- Test: `arch_walls_rooms_section` (10×8 m: netto 43.32 + 28.12 m², brutto 87.36 m²).
+
+## 3D modelni tuzatish (v0.38) — `AREDIT`
+
+ARMODEL (rejalar + kesimdan 3D) natijasida yoqmagan joy: 3D da elementni bosing — o'ng panelda tur (ustun, devor, plita …),
+pastki/yuqori belgi, beton sinfi, o'chirish va "oxirgi tuzatishni qaytarish". Buyruq: `AREDIT i [KIND=] [Z0=] [Z1=] [H=] [CONC=] | i DEL | UNDO`.
+Testlar: `cli_aredit`, GUI — `armodel edit`.
+
+## Statika: qobiq elementlar va oyna (v0.38) — `src/bim/fem.*`, `apps/gui/fem_dialog.*`
+
+- MITC4 yassi qobiq (membrana + plastina, ko'ndalang siljish bog'lash nuqtalarida — qulflanmaydi): `.fem` da `SHELL`, `PRESS`, `SMASS`.
+  Ichki kuchlar markazda: Nx Ny Nxy (kN/m), Mx My Mxy (kN·m/m), Qx Qy. Tekshiruv (Timoshenko): kvadrat plastina, sharnirli —
+  0.1%, qisilgan — 0.2% farq (`fem_shell_plate`).
+- Generator: `FEM GEN=6x3;6x2 FLOORS=5 SLAB=0.2 DIV=4` — ramka + qavat plitalari qobiq bilan (og'irlik — plitaga bosim, massa — plitada).
+- Oyna **Tahlil → Statika (FEM)**: generator yoki .fem, statik / modal / spektral (ShNQ 2.01.03-19), temirbeton oldindan o'lchamlash;
+  3D: sterjenlar qizil-sariq-yashil, plitalar moment bo'yicha rangli, statik deformatsiya va tebranish shakllari animatsiyasi.
+
+## Video: kamera yo'li (v0.38) — `bim::walkPath/orbitPath`, `apps/gui/video_dialog.*`
+
+- Oyna **Ko'rinish → Video**: chizmada chiziq tanlang — shu yo'l bo'ylab yurish (ko'z balandligi, tezlik, oldinga qarash) yoki
+  dron aylanishi; 3D da real-vaqt ko'rish, **Yozib olish** — ffmpeg bo'lsa MP4, aks holda PNG kadrlar.
+- Eksport: `EXPORT3D sahna.gltf UNREAL=ue.py CAMPATH=id [EYE=1.7] [SPEED=1.4] | ORBIT=20 [FPS=30]` — Unreal: Level Sequence
+  (CineCamera, transform kalitlari, kamera kesimi; render — Movie Render Queue), 3ds Max (`MAX=`): animatsiyali Physical kamera
+  (`3dsmaxcmd … -start:0 -end:N`), har yo'l — `_kamera.csv` (Lumion / D5 / Twinmotion uchun koordinatalar).
+- Test: `camera_path_export`, GUI — `video path`.
+
+## AutoLISP va DCL (v0.38) — `src/lisp/*`, `apps/cli/interpreter_lisp.cpp`, `apps/gui/dcl_dialog.*`
+
+AutoCAD uchun yozilgan `.lsp` fayllar AsiaCAD'da ishlaydi (lenta: **Tahlil → LISP → LISP yuklash**).
+
+- `APPLOAD fayl.lsp [...]` — yuklash; fayldagi `(defun c:XXX ...)` funksiyalari oddiy buyruq bo'ladi (`XXX` deb yoziladi).
+  Buyruqdan keyingi so'zlar `getpoint`/`getdist`/`getint`/`getstring`/`getkword` so'rovlariga javob: `KVADRAT 0,0 10`.
+  GUI'da javob berilmasa so'rov oynasi chiqadi.
+- `(` bilan boshlangan qator — LISP ifodasi (ko'p qatorli ham), `!x` — o'zgaruvchi qiymati, `LISP "(...)"` — buyruq ko'rinishida.
+- Til: AutoLISP + Visual LISP — ~350 funksiya: arifmetika, ro'yxatlar, `mapcar`/`lambda`/`apply`, `vl-sort`, `vl-string-*`,
+  `wcmatch`, `rtos`/`angtos`/`distof`, `polar`/`inters`/`distance`, fayllar (`open`/`read-line`/`write-line`),
+  `vl-catch-all-apply`, `*error*` (AutoCAD kabi xato joyida chaqiriladi), `initget` kalit so'zlari.
+- Chizma: `command` / `vl-cmdf` (AutoCAD argumentlari tartibi — `"_.PLINE" p1 p2 "_C"`, `"MOVE" ss "" p1 p2`, `"-LAYER" "M" ...`,
+  `"_non"` va `"_"` prefikslari), `entget`/`entmake`/`entmod`/`entdel`/`entnext`/`entlast`, `ssget` (`"X"`, `"L"`, `"P"`, `"W"`/`"C"`,
+  DXF filtrlari va `-4` `<OR`/`<AND`/`<NOT`), `tblsearch`/`tblnext`, `getvar`/`setvar`.
+- ActiveX: `vlax-get-acad-object`, `vla-get-activedocument`, `vla-get-modelspace`, `vla-add*` (line, circle, arc, text,
+  lightweightpolyline, insertblock), har qanday `vla-get-<Xossa>` / `vla-put-<Xossa>` (Layer, Color, StartPoint, Length, Area,
+  TextString ...), `vlax-for`, `vlax-invoke`, `vla-getboundingbox`, va `vlax-curve-*` (uzunlik, parametr, nuqta, eng yaqin nuqta, maydon).
+- DCL: `load_dialog`/`new_dialog`/`action_tile`/`set_tile`/`get_tile`/`mode_tile`/`start_list`…/`start_dialog`/`done_dialog` —
+  GUI'da haqiqiy oyna (edit_box, popup_list, list_box, toggle, radio, button, text, boxed_row/column, ok_cancel).
+  CLI'da dialog "bekor" (0) qaytaradi va ogohlantirish chiqadi.
+- Bitta LISP buyrug'i — bitta undo qadami. Qo'llab-quvvatlanmagan funksiya (masalan Express Tools `acet-*`) aniq xato beradi.
+- Testlar: `lisp_core`, `lisp_dcl_parse`, `cli_lisp_appload`, `cli_lisp_dcl`; GUI — `lisp dcl dialog`. Namuna: `tests/data/sinov.lsp`.
 
 ## O'rnatish (Windows)
 

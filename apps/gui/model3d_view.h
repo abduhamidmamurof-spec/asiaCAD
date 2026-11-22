@@ -68,6 +68,9 @@ public:
     // ---- ko'rinish
     void resetView();
     void fit();
+    // Video / kamera yo'li: kamerani dunyo koordinatalarida qo'yish (perspektiva); sahna chegarasi (dunyo)
+    void setCamera(const P3& eye, const P3& target);
+    bool sceneBounds(P3& mn, P3& mx) const;
     void setView(View v);
     void setStyle(Style s);
     Style style() const { return style_; }

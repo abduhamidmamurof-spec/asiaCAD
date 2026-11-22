@@ -86,6 +86,7 @@ public:
     EntityId nearestEntity(const std::string& layer, double x, double y, double z) const;   // 3D -> chizma obyekti
     void runDialogCommands(const QStringList& lines, const std::function<void()>& after);
     Viewport* viewport() const { return view_; }
+    class PropPanel* arPropsPanel() const { return arProps_; }   // ARMODEL elementi xossalari (3D tanlov)
     SymbolPalette* symbolPalette() const { return symPal_; }
     SteelPanel* steelPanel() const { return steelPal_; }
     Document& document() { return doc_; }
@@ -114,7 +115,9 @@ public:
     GeoPlaceDialog* openGeoPlace();
     SurveyDialog* openSurvey(int kind = -1);
     EarthworkDialog* openEarthwork(int tab = -1);
-    class SeismicDialog* openSeismic(int tab = 0);   // Zilzila va grunt (6–12 ball, qoziq, zamin, cho'kish, PIT)
+    class SeismicDialog* openSeismic(int tab = 0);
+    class FemDialog* openFem();
+    class VideoDialog* openVideo();                   // Video: kamera yo'li (yurish / dron), yozib olish, eksport                       // Statika: ramka + qobiq plitalar, FEM, RC oldindan o'lchamlash   // Zilzila va grunt (6–12 ball, qoziq, zamin, cho'kish, PIT)
     Model3DView* view3d() const { return view3d_; }
     void show3D(bool on);                  // asosiy oynada 2D chizma / 3D model
     bool is3D() const;
@@ -194,6 +197,7 @@ private:
     CommandStack stack_;
     std::ostringstream out_;
     std::unique_ptr<cli::Interpreter> interp_;
+    std::unique_ptr<class DclQtUi> dclUi_;  // AutoLISP DCL dialoglari
 
     UiMode mode_ = UiMode::Classic;
     Theme theme_;
@@ -230,6 +234,10 @@ private:
     SurveyDialog* survey_ = nullptr;
     EarthworkDialog* earth_ = nullptr;
     class SeismicDialog* seis_ = nullptr;
+    class FemDialog* fem_ = nullptr;
+    class VideoDialog* video_ = nullptr;
+    class PropPanel* arProps_ = nullptr;   // ARMODEL elementi (3D da tanlangan) — tuzatish
+    void fillArProps(int index);
     GeoPlaceDialog* geoDlg_ = nullptr;
     std::function<void(const std::vector<Vec3>&)> pickCb_;   // oyna chizmadan nuqta kutmoqda
     DriveDialog* drive_ = nullptr;

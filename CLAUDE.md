@@ -12,7 +12,15 @@ Modullar, buyruqlar va versiyalar bo'yicha batafsil — `README.md`.
   - Xossalar paneli har menyuda: 3D da element tanlansa — xossalar, tuzatish, qo'shimcha detal (`apps/gui/prop_panel.*`).
   - Varaqlar (AutoCAD kabi): Boshlash · bir nechta chizma · menyular varaq bo'lib (`apps/gui/main_window_tabs.cpp`).
   - Menyularda Ctrl+Z / Ctrl+Y (`apps/gui/menu_history.h`).
-- Testlar: yadro — `174 test, 2755 tekshiruv, 0 xato` (Windows CI da ham 0 xato); GUI — `621 tekshiruv, 0 xato`.
+- v0.38: AutoLISP + DCL (`src/lisp/`, `apps/cli/interpreter_lisp.cpp`, `apps/gui/dcl_dialog.*`) — `APPLOAD`, `(` qatorlari, C:XXX buyruqlar.
+  Chizmaga LISP ham faqat Interpreter buyruqlari / undo qilinadigan ICommand orqali yozadi.
+- v0.38 (davomi): MTEXT, DIMCONTINUE/DIMBASELINE, DIVIDE/MEASURE, PURGE (`interpreter_draft2.cpp`); PLOT → vektor PDF
+  (`src/io/pdf_writer.cpp`, TrueType qism-shrift); arxitektura WALL/DOOR/WINDOW/ROOM/ROOMS/ARSECTION/ARSHEET/AR3D (`src/bim/arch.*`,
+  xdata `aw.*`); AREDIT (ARMODEL elementini 3D dan tuzatish, `fillArProps`); FEM qobiq MITC4 + oyna (`fem_dialog.*`);
+  Video: kamera yo'li (`video_dialog.*`, EXPORT3D CAMPATH=/ORBIT=).
+- v0.39: BIM modeldan smeta (5D) — `SMETA` buyrug'i, `src/bim/smeta.*`, IFC oynasi › *Smeta (5D)*: IFC Qto yoki geometriyadan
+  miqdorlar -> narxlar bazasi (Excel, foydalanuvchi to'ldiradi) -> material/ish haqi/mashina, ustama, foyda, QQS -> Excel smeta.
+- Testlar: yadro — `187 test, 2922 tekshiruv, 0 xato`; GUI — `648 tekshiruv, 0 xato`.
 
 ## Yig'ish va testlar (Linux)
 
@@ -82,7 +90,7 @@ Tartib bilan, har biri alohida modul (ochilishda faqat chizma yadrosi yuklanadi)
 1. ✅ Akslar — `GRIDAXES` (v0.34).
 2. ✅ (asosiy qism, v0.34 `GENPLAN`) Genplan / vaziyat rejasi: DXF dan tek buyruq bilan bordyur, trotuar, avtoturargoh chiziqlari, rampalar, shtrixlar,
    metraj (Excel); so'ng "inson nazorati" oynasi — tanlangan bo'lakning turini o'zgartirish, qolgani qayta chiziladi.
-3. 3D model tek buyruq bilan: qavat rejalari + kesimlardan avtomatik ko'tarish; yoqmagan joyni oddiy tahrir (tanlash → o'lcham/tur).
+3. ✅ (v0.36 ARMODEL + v0.38 AREDIT) 3D model tek buyruq bilan: qavat rejalari + kesimlardan avtomatik ko'tarish; yoqmagan joyni oddiy tahrir (tanlash → o'lcham/tur).
 4. ✅ (MVP, v0.34 `FACADE`) Fasad: rejadan fasad/ko'rinish, fasad elementlari (deraza, vitraj, panel, parapet, karniz), fasad paftasi va metraji.
 5. (3ds Max skripti ✅ v0.37 `EXPORT3D MAX=`: Corona/V-Ray materiallar, quyosh, kameralar, aktivlar jadvali bo'yicha proksi; D5/glTF ✅ v0.34) Render (fotorealistik) — foydalanuvchi talabi: 3ds Max + Corona va V-Ray, Lumion / D5 / Twinmotion, Unreal (Blender emas).
    "Renderga yuborish" oynasi: sahna eksporti (OBJ+MTL / Collada / glTF) standart material nomlari bilan, kamera, quyosh (Toshkent,
@@ -92,8 +100,12 @@ Tartib bilan, har biri alohida modul (ochilishda faqat chizma yadrosi yuklanadi)
    balandlik, burilish bilan "marker" eksport qiladi; MaxScript ularni Chaos Cosmos (Corona/V-Ray) skanerlangan aktivlari yoki
    foydalanuvchi kutubxonasidagi proxy (.cgeo/.vrmesh, Maxtree/Laubwerk/AXYZ) bilan almashtiradi; Lumion/D5 — o'z kutubxonasi.
    Tur moslash jadvali (masalan "chinor 12 m" → aktiv nomi) foydalanuvchi bilan sozlanadi.
-5b. Video (alohida mavzu, foydalanuvchi: "render va Lumion — boshqa mavzular"): Lumion sifatidagi animatsiya/video — kamera yo'li,
+5b. ✅ (asosiy, v0.38: kamera yo'li, MP4/PNG, Unreal Sequencer, 3ds Max animatsiya) Video (alohida mavzu, foydalanuvchi: "render va Lumion — boshqa mavzular"): Lumion sifatidagi animatsiya/video — kamera yo'li,
    o'simlik/odam/avto, yengil (og'ir emas); Lumion/D5/Twinmotion ga eksport yoki o'z yengil real-vaqt ko'rinishi.
-6. Arxitektura: aqlli devor / eshik / deraza, xona maydonlari (brutto/netto, ijaraga beriladigan), kesim va ko'rinish, pafta + PDF.
-7. (yadro ✅ v0.35 `FEM`: sterjen, statik/modal/spektral CQC, tekshiruv testlari; ✅ v0.37 `QLOAD`, spektral element kuchlari, `FEM DESIGN` — temirbeton oldindan o'lchamlash qizil-yashil; qobiq va GUI — keyin) Statika: o'z 3D FEM yechuvchisi (sterjen + qobiq), modal + spektral (ShNQ 2.01.03-19), oldindan o'lchamlash (ustun/perda/rigel/plita,
+6. ✅ (v0.38) Arxitektura: aqlli devor / eshik / deraza, xona maydonlari (brutto/netto, ijaraga beriladigan), kesim va ko'rinish, pafta + PDF.
+7. (yadro ✅ v0.35 `FEM`: sterjen, statik/modal/spektral CQC, tekshiruv testlari; ✅ v0.37 `QLOAD`, spektral element kuchlari, `FEM DESIGN` — temirbeton oldindan o'lchamlash qizil-yashil; ✅ v0.38 qobiq MITC4 va GUI oynasi) Statika: o'z 3D FEM yechuvchisi (sterjen + qobiq), modal + spektral (ShNQ 2.01.03-19), oldindan o'lchamlash (ustun/perda/rigel/plita,
    qizil-yashil), temir-beton loyihalash → armatura paftasi, SCAD/ETABS bilan solishtiruvchi tekshiruv misollari (sertifikat uchun).
+8. (v0.39 asosi ✅ `SMETA`) BIM — AsiaCAD «mahalliy BIM markazi» (foydalanuvchi maqsadi: keng tarqalgan dastur, Qurilish vazirligi BIM talab qila boshladi):
+   istalgan dasturdan IFC -> 5D smeta (mahalliy narxlar bazasi va format), ShNQ model tekshiruvi, KJ, infratuzilma, 4D qurilish nazorati,
+   so'ng — o'z BIM modellash (devor/plita/ustun). Keyingi qadam: foydalanuvchining haqiqiy IFC modeli + smeta Excel + narxlar bazasi bilan
+   solishtirish va formatni moslash. Tayyor bo'lganda — Adliya vazirligida dasturni ro'yxatdan o'tkazish (patent) uchun foydalanuvchiga xabar berish.

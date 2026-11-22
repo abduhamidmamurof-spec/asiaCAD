@@ -78,7 +78,9 @@ bool Interpreter::dispatchSeismic(const std::string& cmd, const Args& a) {
         for (const auto& f : flags)
             if (f != "BUILDING" && f != "GENPLAN" && f != "NOMARKERS" && f != "SHELL" && f != "IFCCOLORS") throw usage();
         for (const auto& [k, v] : m)
-            if (k != "IFC" && k != "DATE" && k != "TIME" && k != "MAX" && k != "RENDERER" && k != "UNREAL" && k != "GEO" && k != "LABELS") throw usage();
+            if (k != "IFC" && k != "DATE" && k != "TIME" && k != "MAX" && k != "RENDERER" && k != "UNREAL" && k != "GEO" && k != "LABELS" && k != "CAMPATH" &&
+                k != "EYE" && k != "SPEED" && k != "AHEAD" && k != "ORBIT" && k != "FPS")
+                throw usage();
         bim::Scene sc;
         int parts = 0;
         if (auto it = m.find("IFC"); it != m.end()) {
@@ -189,6 +191,32 @@ bool Interpreter::dispatchSeismic(const std::string& cmd, const Args& a) {
         }
         if (sc.triangleCount() == 0) throw Error("export.err.empty", {});
         bim::centerScene(sc);
+        // video: kamera yo'li (chizmadagi chiziq bo'ylab yurish) va/yoki dron aylanishi
+        const double fps = m.count("FPS") ? parseNumber(m.at("FPS")) : 30.0;
+        if (auto it = m.find("CAMPATH"); it != m.end()) {
+            std::vector<Vec3> pts;
+            for (EntityId id : parseSelection(it->second)) {
+                const IEntity* e = doc_.find(id);
+                if (auto* pl = dynamic_cast<const PolylineEntity*>(e)) { for (const auto& v : pl->vertices()) pts.push_back(v); if (pl->isClosed() && !pl->vertices().empty()) pts.push_back(pl->vertices().front()); }
+                else if (auto* ln = dynamic_cast<const LineEntity*>(e)) { pts.push_back(ln->startPoint()); pts.push_back(ln->endPoint()); }
+                else if (auto* cv = dynamic_cast<const ICurve*>(e)) { const double L = cv->length(); for (int k = 0; k <= 64; ++k) pts.push_back(cv->pointAtDistance(L * k / 64)); }
+                break;
+            }
+            if (pts.size() < 2) throw Error("err.need_curve");
+            auto cp = bim::walkPath(pts, num(m, "EYE", 1.7), num(m, "SPEED", 1.4), num(m, "AHEAD", 8.0));
+            cp.fps = fps;
+            sc.paths.push_back(cp);
+        }
+        if (auto it = m.find("ORBIT"); it != m.end()) {
+            double x0 = 1e300, y0 = 1e300, z0 = 1e300, x1 = -1e300, y1 = -1e300, z1 = -1e300;
+            for (const auto& mm : sc.meshes)
+                for (const auto& t : mm.tris)
+                    for (const auto& q : t) { x0 = std::min(x0, q.x); y0 = std::min(y0, q.y); z0 = std::min(z0, q.z); x1 = std::max(x1, q.x); y1 = std::max(y1, q.y); z1 = std::max(z1, q.z); }
+            const double span = std::max({x1 - x0, y1 - y0, 10.0});
+            auto cp = bim::orbitPath({(x0 + x1) / 2, (y0 + y1) / 2, z0}, span * 0.8, (z1 - z0) + span * 0.35, parseNumber(it->second), z0 + (z1 - z0) * 0.3);
+            cp.fps = fps;
+            sc.paths.push_back(cp);
+        }
         const std::string ext = utf8::toUpper(std::filesystem::path(path).extension().string());
         if (ext == ".OBJ") bim::writeObj(sc, path);
         else bim::writeGltf(sc, path);
@@ -197,6 +225,11 @@ bool Interpreter::dispatchSeismic(const std::string& cmd, const Args& a) {
             return (p.parent_path() / (p.stem().string() + suffix)).string();
         };
         if (!sc.markers.empty()) bim::writeMarkersCsv(sc, sib("_markerlar.csv"));
+        for (std::size_t k = 0; k < sc.paths.size(); ++k) {
+            const std::string csv = sib(k == 0 ? "_kamera.csv" : std::format("_kamera{}.csv", k + 1));
+            bim::writeCameraCsv(sc.paths[k], sc.origin, csv);
+            say("export.msg.campath", {csv, std::format("{:.1f}", sc.paths[k].duration()), std::to_string(sc.paths[k].keys.size())});
+        }
         // quyosh (Toshkent) va kamera
         int Y = 2026, M = 6, D = 21;
         double hour = 16.0;
@@ -456,7 +489,11 @@ bool Interpreter::dispatchSeismic(const std::string& cmd, const Args& a) {
             const auto [bb, bh] = pair("BEAM", 0.3, 0.6);
             const int fl = static_cast<int>(num(m, "FLOORS", 5));
             if (dx.empty() || dy.empty() || fl < 1) throw usage();
-            md = bim::fem::frameGenerator(dx, dy, fl, num(m, "H", 3.3), cb, ch, bb, bh, num(m, "E", 3.0e7), num(m, "Q", 1.0), num(m, "G", 10.0), design);
+            if (m.count("SLAB"))   // plitalar qobiq elementlar bilan (MITC4), og'irlik — plitaga bosim
+                md = bim::fem::frameWithSlabs(dx, dy, fl, num(m, "H", 3.3), cb, ch, bb, bh, num(m, "E", 3.0e7), num(m, "Q", 1.0), num(m, "G", 10.0),
+                                              num(m, "SLAB", 0.2), static_cast<int>(num(m, "DIV", 4)));
+            else
+                md = bim::fem::frameGenerator(dx, dy, fl, num(m, "H", 3.3), cb, ch, bb, bh, num(m, "E", 3.0e7), num(m, "Q", 1.0), num(m, "G", 10.0), design);
         } else {
             if (file.empty()) throw usage();
             std::ifstream f(file, std::ios::binary);
@@ -473,6 +510,12 @@ bool Interpreter::dispatchSeismic(const std::string& cmd, const Args& a) {
         }
         double totMass = 0;
         for (const auto& [n, v] : md.mass) totMass += v;
+        for (const auto& sh : md.shells)   // qobiq massasi: t/m² × yuza (ikki uchburchak)
+            if (auto it = md.smass.find(sh.id); it != md.smass.end()) {
+                Vec3 p[4];
+                for (int i = 0; i < 4; ++i) p[i] = md.nodes[static_cast<std::size_t>(md.index(sh.n[static_cast<std::size_t>(i)]))].p;
+                totMass += it->second * 0.5 * ((p[2] - p[0]).cross(p[3] - p[1])).length();
+            }
         say("fem.msg.model", {std::to_string(md.nodes.size()), std::to_string(md.beams.size()), std::format("{:.1f}", totMass)});
         xlsx::Workbook wb;
         xlsx::Sheet* sh = nullptr;
@@ -488,7 +531,7 @@ bool Interpreter::dispatchSeismic(const std::string& cmd, const Args& a) {
         std::vector<bim::fem::BeamForces> seisEnv;   // yo'nalishlar bo'yicha eng katta (spektral)
         std::vector<bim::fem::RcCheck> rc;
         try {
-            if (!md.loads.empty() || !md.qloads.empty()) {
+            if (!md.loads.empty() || !md.qloads.empty() || !md.press.empty()) {
                 const auto r = bim::fem::solveStatic(md);
                 stat = r;
                 haveStatic = true;
@@ -497,6 +540,12 @@ bool Interpreter::dispatchSeismic(const std::string& cmd, const Args& a) {
                 double maxM = 0;
                 for (const auto& bf : r.forces) for (int k : {4, 5, 10, 11}) maxM = std::max(maxM, std::abs(bf.f[static_cast<std::size_t>(k)]));
                 say("fem.msg.static", {std::format("{:.2f}", r.maxDisp * 1000), std::format("{:.0f}", rz), std::format("{:.0f}", maxM)});
+                if (!r.shell.empty()) {
+                    double mx = 0, my = 0, nmax = 0;
+                    for (const auto& f : r.shell) { mx = std::max(mx, std::abs(f.Mx)); my = std::max(my, std::abs(f.My)); nmax = std::max({nmax, std::abs(f.Nx), std::abs(f.Ny)}); }
+                    say("fem.msg.shells", {std::to_string(md.shells.size()), std::format("{:.1f}", mx), std::format("{:.1f}", my), std::format("{:.1f}", nmax)});
+                    if (sh) sh->add({xlsx::Cell::s(loc_.tr("fem.xl.shellm")), xlsx::Cell::n(std::max(mx, my), 1)});
+                }
                 if (sh) {
                     sh->add({xlsx::Cell::s(loc_.tr("fem.xl.static"), 1)});
                     sh->add({xlsx::Cell::s(loc_.tr("fem.xl.maxdisp")), xlsx::Cell::n(r.maxDisp * 1000, 2)});

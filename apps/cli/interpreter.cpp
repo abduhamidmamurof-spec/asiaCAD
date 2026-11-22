@@ -5,6 +5,7 @@
 #include <asiacad/bim/ar_project.h>
 #include <asiacad/bim/ifc.h>
 #include <asiacad/bim/norms.h>
+#include <asiacad/bim/smeta.h>
 #include <asiacad/civil/drawset.h>
 #include <asiacad/bim/rebar.h>
 #include <asiacad/civil/excel.h>
@@ -126,6 +127,7 @@ const char* commandSyntax(const std::string& c) {
         {"ARMODEL", "file.dxf|- [floors] [H]"},
         {"IFCIMPORT", "file.ifc [{LOCAL}]"},
         {"SHNQ", "file.ifc [rules.json] | {RULES} out.json"},
+        {"SMETA", "file.ifc [BASE=base.xlsx] [XLSX=smeta.xlsx] [OVERHEAD=%] [PROFIT=%] [VAT=%] | {SAMPLE} base.xlsx"},
         {"ROAD", "[file.json] [+] [x,y]"},
         {"WATERWAY", "[file.json] [Q=m3/s] [SEC=n] [+] [x,y]"},
         {"CORRIDOR", "[file.json] [ASM=n] [+]"},
@@ -179,10 +181,28 @@ const char* commandSyntax(const std::string& c) {
         {"VOLUME", "EG=sel FG=sel|Z=z|BALANCE [IX=‰] [IY=‰] [BASE=x,y] [BOUND=id] [CELL=m]"},
         {"SETPROP", "sel KEY=value [KEY=value ...]"},
         {"GRIDAXES", "X=6,6,7.5 Y=8x3 [O=x,y] [ANG=°] [LET=LAT|CYR] [SWAP] [START=1,A] [EXT=m] [R=m] [H=m] [NODIM] [ONE] | RAD=r0;dr… ANGS=a0;da…"},
-        {"EXPORT3D", "file.gltf|file.obj [IFC=file.ifc [SHELL] [IFCCOLORS]] [BUILDING] [GENPLAN] [NOMARKERS] [DATE=2026-06-21] [TIME=16:00] [MAX=scene.ms [RENDERER=CORONA|VRAY|PHYSICAL]] [UNREAL=scene.py [GEO=lat,lon] [LABELS=layer]]"},
-        {"FEM", "file.fem | GEN=6x3;6x2 [FLOORS=5] [H=3.3] [COL=0.4x0.4] [BEAM=0.3x0.6] [E=3e7] [Q=1] [G=10] [MODES=6] [RP=475] [PGA=g] [R=1] [DIR=XY] [DESIGN [CONC=B25] [RS=435]] [DRAW] [SAVE=f.fem] [XLSX=f]"},
+        {"EXPORT3D", "file.gltf|file.obj [IFC=file.ifc [SHELL] [IFCCOLORS]] [BUILDING] [GENPLAN] [NOMARKERS] [DATE=2026-06-21] [TIME=16:00] [MAX=scene.ms [RENDERER=CORONA|VRAY|PHYSICAL]] [UNREAL=scene.py [GEO=lat,lon] [LABELS=layer]] [CAMPATH=id [EYE=1.7] [SPEED=1.4] [AHEAD=8]] [ORBIT=seconds] [FPS=30]"},
+        {"FEM", "file.fem | GEN=6x3;6x2 [FLOORS=5] [H=3.3] [COL=0.4x0.4] [BEAM=0.3x0.6] [SLAB=0.2 [DIV=4]] [E=3e7] [Q=1] [G=10] [MODES=6] [RP=475] [PGA=g] [R=1] [DIR=XY] [DESIGN [CONC=B25] [RS=435]] [DRAW] [SAVE=f.fem] [XLSX=f]"},
         {"FACADE", "IFC=file.ifc | FLOORS=n [H=3.3] [Z0=0] [LAYER=name] [TYPE=CURTAIN|BAND|PUNCHED] [MODULE=1.5] [SPANDREL=m] [OFFSET=m] [WIN=1.5x1.8] [SILL=0.9] [ELEV] [XLSX=f]"},
         {"GENPLAN", "[MAP=layer:ROAD|SIDEWALK|GREEN|PARKING|BUILDING|PLAYGROUND|RAMP|PATH|NONE,…] [CURB=15;8] [STALL=2.5x5] [NOCURB] [NOPARK] [LAYERS] [XLSX=f]"},
+        {"APPLOAD", "[file.lsp ...]"},
+        {"MTEXT", "p h \"text\\Pline2\" [W=width] [ROT=deg] [J=TL..BR] [LS=1]"},
+        {"DIMCONTINUE", "p [p ...] [BASE=id]"},
+        {"DIMBASELINE", "p [p ...] [BASE=id] [STEP=d]"},
+        {"DIVIDE", "sel n [BLOCK=name] [ALIGN]"},
+        {"MEASURE", "sel d [BLOCK=name] [ALIGN]"},
+        {"PURGE", "[ALL|LAYERS|BLOCKS] [LIST]"},
+        {"WALL", "p1 p2 [p ...] [T=0.3] [H=3] [J=C|L|R] [CLOSE]"},
+        {"DOOR", "p [W=0.9] [H=2.1] [RIGHT] [OUT] | p DEL"},
+        {"WINDOW", "p [W=1.5] [H=1.5] [SILL=0.9] | p DEL"},
+        {"ROOM", "p [NAME=..] [TYPE=LIVING|OFFICE|CORRIDOR|WC|...] [RENT=0|1] [TH=0.25]"},
+        {"ROOMS", "[XLSX=file.xlsx]"},
+        {"ARSECTION", "p1 p2 AT=x,y [FLOORS=n] [SLAB=0.2] [DEPTH=d] [TITLE=1] [TH=0.25]"},
+        {"ARSHEET", "name [A0..A4]"},
+        {"AR3D", "[FLOORS=n] [SLAB=0.2]"},
+        {"AREDIT", "i [KIND=WALL|COLUMN|SLAB|...] [Z0=] [Z1=] [H=] [CONC=B25] | i DEL | UNDO"},
+        {"PLOT", "file.pdf [A0..A4] [PORTRAIT] [WINDOW=x1,y1,x2,y2] [SCALE=100] [UNITS=1] [MONO] [SHEET=name|ALL] [FONT=f.ttf]"},
+        {"LISP", "(expr)"},
         {"SEISMIC", "file.seis [I=6..12|PGA=g] [DIR=X|Y] [SWEEP] [XLSX=f]"},
         {"PILECAP", "D=m L=m R=kPa F=kPa [GRS=1.5] [GRU=2] [LOAD=kN]"},
         {"BEARING", "B=m [L=m] [DF=m] [C=kPa] [PHI=deg] [G=kN/m3] [FS=3]"},
@@ -367,6 +387,7 @@ void Interpreter::addLayered(const std::string& name, std::vector<std::unique_pt
 bool Interpreter::run(const std::string& rawLine) {
     std::string line = rawLine;
     lastOk_ = true;
+    if (runLispLine(line)) return true;  // AutoLISP ifodasi: (...) yoki !var
     if (auto hash = line.find('#'); hash != std::string::npos && line.find('"') > hash) line.resize(hash);
     auto toks = tokenize(line);
     if (toks.empty()) return true;
@@ -378,6 +399,7 @@ bool Interpreter::run(const std::string& rawLine) {
         return true;
     }
     try {
+        if (canon.empty() && runLispCommand(toks[0], args)) return true;  // LISP da aniqlangan C:XXX
         if (canon.empty()) throw Error("err.unknown_command", {toks[0]});
         const std::size_t before = stack_.pushCount();
         dispatch(canon, args);
@@ -405,6 +427,9 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
     if (dispatchProps(cmd, a)) return;
     if (dispatchAsBuilt(cmd, a)) return;
     if (dispatchSeismic(cmd, a)) return;
+    if (dispatchLisp(cmd, a)) return;
+    if (dispatchDraft2(cmd, a)) return;
+    if (dispatchArch(cmd, a)) return;
     if (cmd == "LINE") {
         need(a, 2, cmd);
         std::vector<Vec3> pts;
@@ -816,6 +841,49 @@ void Interpreter::dispatch(const std::string& cmd, const Args& a) {
         for (const auto& w : m.warnings)
             out_ << "  " << loc_.tr("sewer.lvl.warning") << ": "
                  << loc_.tr(w, {std::to_string(m.openings - m.openingsCut), std::to_string(m.openings), std::to_string(m.skipped)}) << '\n';
+    } else if (cmd == "SMETA") {
+        // BIM modeldan smeta (5D): IFC -> hajmlar (QTO) -> narxlar bazasi kalimlari -> Excel smeta
+        need(a, 1, cmd);
+        const auto tr = [&](const std::string& k) { return loc_.tr(k); };
+        if (loc_.isKeyword(a[0], "SAMPLE")) {   // namuna baza (to'ldirish uchun)
+            need(a, 2, cmd);
+            const auto b = bim::defaultSmetaBase();
+            xlsx::save(bim::smetaBaseWorkbook(b, tr), a[1]);
+            say("smeta.msg.sample", {a[1], std::to_string(b.items.size())});
+            return;
+        }
+        std::map<std::string, std::string> kw;
+        for (std::size_t i = 1; i < a.size(); ++i) {
+            const auto eq = a[i].find('=');
+            if (eq == std::string::npos) throw Error("err.usage", {loc_.commandName(cmd) + " " + localizeSyntax(loc_, commandSyntax(cmd))});
+            kw[utf8::toUpper(a[i].substr(0, eq))] = a[i].substr(eq + 1);
+        }
+        for (const auto& [k, v] : kw)
+            if (k != "BASE" && k != "XLSX" && k != "OVERHEAD" && k != "PROFIT" && k != "VAT")
+                throw Error("err.usage", {loc_.commandName(cmd) + " " + localizeSyntax(loc_, commandSyntax(cmd))});
+        bim::IfcModel m;
+        std::string err;
+        if (!bim::readIfc(a[0], m, err, false)) throw Error(err, {a[0]});
+        bim::SmetaBase base = bim::defaultSmetaBase();
+        if (auto it = kw.find("BASE"); it != kw.end()) base = bim::smetaBaseFromWorkbook(xlsx::load(it->second));
+        else say("smeta.msg.samplebase");
+        if (auto it = kw.find("OVERHEAD"); it != kw.end()) base.overheadPct = parseNumber(it->second);
+        if (auto it = kw.find("PROFIT"); it != kw.end()) base.profitPct = parseNumber(it->second);
+        if (auto it = kw.find("VAT"); it != kw.end()) base.vatPct = parseNumber(it->second);
+        const auto r = bim::computeSmeta(m, base);
+        say("smeta.msg.summary", {std::to_string(r.elements), std::to_string(r.matched), std::to_string(r.elements - r.matched),
+                                  std::to_string(r.fromQto), std::to_string(r.lines.size())});
+        for (const auto& L : r.lines) {
+            const auto& it = base.items[L.item];
+            say("smeta.msg.line", {it.code, it.name, std::format("{:.3f}", L.qty), it.unit, std::format("{:.0f}", L.total)});
+        }
+        for (const auto& u : r.unmatched) say("smeta.msg.unmatched", {loc_.tr("ifc.cat." + u.category), std::to_string(u.count)});
+        say("smeta.msg.total", {std::format("{:.0f}", r.direct), std::format("{:.0f}", r.overhead), std::format("{:.0f}", r.profit),
+                                std::format("{:.0f}", r.vat), std::format("{:.0f}", r.total), base.currency});
+        if (auto it = kw.find("XLSX"); it != kw.end()) {
+            xlsx::save(bim::smetaWorkbook(m, base, r, tr), it->second);
+            say("smeta.msg.saved", {it->second});
+        }
     } else if (cmd == "SHNQ") {
         // ShNQ normativ tekshiruvi: IFC model + qoidalar jadvali (standart yoki JSON fayl)
         need(a, 1, cmd);

@@ -3,6 +3,8 @@
 
 #include <asiacad/core/error.h>
 #include <asiacad/io/xlsx.h>
+#include <asiacad/bim/smeta.h>
+#include <asiacad/core/error.h>
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -235,12 +237,15 @@ IfcPanel::IfcPanel(const i18n::Localizer& loc, std::vector<IfcLoaded>& models, Q
     remove_->setObjectName("ifcRemove");
     export_ = new QPushButton(this);
     export_->setObjectName("ifcExport");
+    smeta_ = new QPushButton(this);
+    smeta_->setObjectName("ifcSmeta");
     show3d_ = new QPushButton(this);
     show3d_->setObjectName("ifcShow3d");
     close_ = new QPushButton(this);
     bar->addWidget(add_);
     bar->addWidget(remove_);
     bar->addWidget(export_);
+    bar->addWidget(smeta_);
     bar->addStretch(1);
     bar->addWidget(show3d_);
     bar->addWidget(close_);
@@ -248,6 +253,7 @@ IfcPanel::IfcPanel(const i18n::Localizer& loc, std::vector<IfcLoaded>& models, Q
 
     connect(add_, &QPushButton::clicked, this, &IfcPanel::addRequested);
     connect(show3d_, &QPushButton::clicked, this, &IfcPanel::show3DRequested);
+    connect(smeta_, &QPushButton::clicked, this, &IfcPanel::runSmeta);
     connect(close_, &QPushButton::clicked, this, &QDialog::hide);
     connect(remove_, &QPushButton::clicked, this, [this] {
         const int i = current();
@@ -349,6 +355,8 @@ void IfcPanel::retranslate() {
     add_->setText(t("gui.ifc.add"));
     remove_->setText(t("gui.ifc.remove"));
     export_->setText(t("gui.ifc.export"));
+    smeta_->setText(t("gui.ifc.smeta"));
+    smeta_->setToolTip(t("gui.ifc.smeta.tip"));
     show3d_->setText(t("gui.ifc.show3d"));
     close_->setText(t("gui.btn.close"));
     tabs_->setTabText(0, t("gui.ifc.tab.summary"));
@@ -800,6 +808,41 @@ void IfcPanel::fillDetails() {
     for (auto* it : {cell(r, 0, t("gui.ifc.total"), false), cell(r, 1, QString::number(n), true), cell(r, 2, QString::number(vol, 'f', 3), true),
                      cell(r, 3, kg > 0 ? QString::number(kg, 'f', 1) : QStringLiteral("—"), true)})
         it->setFont(bold);
+}
+
+void IfcPanel::runSmeta() {
+    const int i = current();
+    if (i < 0) return;
+    const auto& L = models_[static_cast<std::size_t>(i)];
+    const QFileInfo fi(L.path);
+    // narxlar bazasi: o'z bazasi yoki namuna (bekor qilinsa)
+    const QString bp = QFileDialog::getOpenFileName(this, t("gui.ifc.smeta.base"), fi.absolutePath(), QStringLiteral("Excel (*.xlsx)"));
+    bim::SmetaBase base = bim::defaultSmetaBase();
+    const auto tr = [this](const std::string& k) { return loc_.tr(k); };
+    try {
+        if (!bp.isEmpty()) base = bim::smetaBaseFromWorkbook(xlsx::load(bp.toStdString()));
+    } catch (const Error& e) {
+        QMessageBox::warning(this, t("gui.ifc.smeta"), QString::fromStdString(loc_.tr(e.key(), e.args())));
+        return;
+    }
+    QString f = QFileDialog::getSaveFileName(this, t("gui.ifc.smeta"), fi.absolutePath() + "/" + fi.completeBaseName() + "_smeta.xlsx",
+                                             QStringLiteral("Excel (*.xlsx)"));
+    if (f.isEmpty()) return;
+    if (!f.endsWith(".xlsx", Qt::CaseInsensitive)) f += ".xlsx";
+    const auto r = bim::computeSmeta(*L.model, base);
+    try {
+        xlsx::save(bim::smetaWorkbook(*L.model, base, r, tr), f.toStdString());
+    } catch (const Error&) {
+        QMessageBox::warning(this, t("gui.ifc.smeta"), t("xlsx.err.write", {f}));
+        return;
+    }
+    QString msg = t("smeta.msg.summary", {QString::number(r.elements), QString::number(r.matched), QString::number(r.elements - r.matched),
+                                          QString::number(r.fromQto), QString::number(static_cast<int>(r.lines.size()))});
+    msg += "\n" + t("smeta.msg.total", {QString::number(r.direct, 'f', 0), QString::number(r.overhead, 'f', 0), QString::number(r.profit, 'f', 0),
+                                        QString::number(r.vat, 'f', 0), QString::number(r.total, 'f', 0), QString::fromStdString(base.currency)});
+    if (bp.isEmpty()) msg += "\n\n" + t("smeta.msg.samplebase");
+    msg += "\n\n" + t("gui.ifc.exported", {QDir::toNativeSeparators(f)});
+    QMessageBox::information(this, t("gui.ifc.smeta"), msg);
 }
 
 bool IfcPanel::exportXlsx(const QString& path) const {

@@ -1,4 +1,8 @@
 #include "main_window.h"
+#include "dcl_dialog.h"
+#include "fem_dialog.h"
+#include "video_dialog.h"
+#include "prop_panel.h"
 
 #include "command_palette.h"
 #include "sewer_dialog.h"
@@ -163,6 +167,24 @@ const ActDef kActs[] = {
     {"ewsections", "sections", "gui.act.ewsections", false}, {"ewcarto", "cartogram", "gui.act.ewcarto", false},
     {"ewvolume", "volume", "gui.act.ewvolume", false},
     {"seismic", "seismic", "gui.act.seismic", false}, {"armodel", "bim", "gui.act.armodel", false}, {"axes", "grid", "gui.act.axes", false}, {"genplan", "city", "gui.act.genplan", false}, {"export3d", "ptexport", "gui.act.export3d", false}, {"export3dmax", "ptexport", "gui.act.export3dmax", false}, {"export3due", "ptexport", "gui.act.export3due", false}, {"facade", "bim", "gui.act.facade", false}, {"geotech", "pile", "gui.act.geotech", false},
+    {"appload", "cmdline", "gui.act.appload", false},
+    {"mtext", "mtext", "gui.act.mtext", false},
+    {"dimcont", "dimcont", "gui.act.dimcont", false},
+    {"dimbase", "dimbase", "gui.act.dimbase", false},
+    {"divide", "divide", "gui.act.divide", false},
+    {"measure", "measure", "gui.act.measure", false},
+    {"purge", "purge", "gui.act.purge", false},
+    {"plot", "plot", "gui.act.plot", false},
+    {"wall", "wall", "gui.act.wall", false},
+    {"door", "door", "gui.act.door", false},
+    {"window", "window", "gui.act.window", false},
+    {"room", "room", "gui.act.room", false},
+    {"rooms", "rooms", "gui.act.rooms", false},
+    {"arsection", "arsection", "gui.act.arsection", false},
+    {"arsheet", "arsheet", "gui.act.arsheet", false},
+    {"ar3d", "bim", "gui.act.ar3d", false},
+    {"femgui", "steelframe", "gui.act.femgui", false},
+    {"video", "drive", "gui.act.video", false},
     {"view3d", "view3d", "gui.act.view3d", false},
     {"sheets", "sheet", "gui.act.sheets", false},
     // v0.31: Fayl / Ko'rinish / Tahlil varaqlari
@@ -426,6 +448,8 @@ MainWindow::MainWindow(i18n::Localizer& loc, QWidget* parent)
     view3d_->setPickAllLines(true);
     // 3D da bosilgan joy -> chizmadagi manba obyekt tanlanadi -> Xossalar paneli (tuzatish shu yerdan, undo bilan)
     connect(view3d_, &Model3DView::objectPicked, this, [this](const QString& key) {
+        if (key.startsWith("ar:")) { fillArProps(key.mid(3).toInt()); return; }
+        if (arProps_) arProps_->hide();
         if (!key.startsWith("bim:") || !building_) return;
         if (const EntityId id = building_->prismSource(key.mid(4).toInt())) {
             view_->setSelection({id});
@@ -722,6 +746,49 @@ void MainWindow::buildActions() {
     connect(act_["ewcarto"], &QAction::triggered, this, [this] { openEarthwork(3); });
     connect(act_["ewvolume"], &QAction::triggered, this, [this] { openEarthwork(4); });
     connect(act_["seismic"], &QAction::triggered, this, [this] { openSeismic(0); });
+    // Qo'shimcha chizma buyruqlari: nomi buyruq satriga yoziladi (DIVIDE/MEASURE — tanlov bilan)
+    for (const auto& [k, canon] : std::initializer_list<std::pair<const char*, const char*>>{
+             {"wall", "WALL"}, {"door", "DOOR"}, {"window", "WINDOW"}, {"room", "ROOM"}, {"arsection", "ARSECTION"}, {"arsheet", "ARSHEET"},
+             {"mtext", "MTEXT"}, {"dimcont", "DIMCONTINUE"}, {"dimbase", "DIMBASELINE"}, {"divide", "DIVIDE"}, {"measure", "MEASURE"}})
+        connect(act_[k], &QAction::triggered, this, [this, c = QString(canon)] {
+            startCommand(c);
+            if ((c == "DIVIDE" || c == "MEASURE") && !view_->selection().empty()) {
+                QString ids;
+                for (EntityId id : view_->selection()) ids += (ids.isEmpty() ? "" : ",") + QString::number(id);
+                cmdEdit_->setText(cmdEdit_->text() + ids + " ");
+            }
+        });
+    connect(act_["purge"], &QAction::triggered, this, [this] { runLine("PURGE"); });
+    connect(act_["rooms"], &QAction::triggered, this, [this] { runLine("ROOMS"); });
+    connect(act_["femgui"], &QAction::triggered, this, [this] { openFem(); });
+    connect(act_["video"], &QAction::triggered, this, [this] { openVideo(); });
+    connect(act_["ar3d"], &QAction::triggered, this, [this] { runLine("AR3D"); show3D(true); });
+    // PDF ga chop etish: ko'rinib turgan model oynasi, vektor
+    connect(act_["plot"], &QAction::triggered, this, [this] {
+        const QString f = QFileDialog::getSaveFileName(this, t("gui.act.plot"), lastDir_, QStringLiteral("PDF (*.pdf)"));
+        if (f.isEmpty()) return;
+        lastDir_ = QFileInfo(f).absolutePath();
+        runLine(QString("PLOT \"%1\" A3").arg(f));
+    });
+    // AutoLISP: .lsp fayllarni yuklash; C:XXX funksiyalari buyruq satrida ishlaydi
+    connect(act_["appload"], &QAction::triggered, this, [this] {
+        const QStringList files = QFileDialog::getOpenFileNames(this, t("gui.act.appload"), lastDir_, t("gui.lisp.filter"));
+        if (files.isEmpty()) return;
+        lastDir_ = QFileInfo(files.front()).absolutePath();
+        QString line = "APPLOAD";
+        for (const QString& f : files) line += QString(" \"%1\"").arg(f);
+        runLine(line);
+    });
+    dclUi_ = std::make_unique<DclQtUi>(this, [this](const char* k) { return t(k); });
+    interp_->dclUi = dclUi_.get();
+    // LISP so'rovlari (getpoint, getdist, getstring ...) — kiritish oynasi
+    interp_->lispInput = [this](std::string& out, const std::string& prompt) {
+        bool ok = false;
+        const QString v = QInputDialog::getText(this, "AutoLISP", QString::fromStdString(prompt.empty() ? std::string("?") : prompt), QLineEdit::Normal, {}, &ok);
+        if (!ok) return false;
+        out = v.toStdString();
+        return true;
+    };
     connect(act_["export3d"], &QAction::triggered, this, [this] {
         // render uchun sahna (D5 / Lumion / Twinmotion / Unreal / 3ds Max): yuklangan IFC + chizmadagi bino va genreja
         QString f = QFileDialog::getSaveFileName(this, t("gui.act.export3d"), lastDir_ + "/sahna.gltf", "glTF (*.gltf);;Wavefront OBJ (*.obj)");
@@ -979,8 +1046,9 @@ void MainWindow::buildRibbon() {
                           {"gui.grp.modify", {"select"}, {"move", "copy", "stretch", "rotate", "mirror", "scale", "trim", "extend", "fillet",
                                                           "chamfer", "array", "offset", "erase", "explode", "join", "break", "matchprop"}},
                           {"gui.grp.layers", {}, {"layprops", "laymcur", "laymatch", "layoff", "layfrz", "laylck", "layulk", "layiso", "layuniso", "layon"}, true, 2}}},
-        {"gui.tab.annot", {{"gui.grp.dim", {"dimlinear", "dimaligned", "dimangular", "dimradius", "dimdiameter"}},
-                           {"gui.grp.notes", {"leader", "text"}}}},
+        {"gui.tab.annot", {{"gui.grp.dim", {"dimlinear", "dimaligned", "dimangular", "dimradius", "dimdiameter", "dimcont", "dimbase"}},
+                           {"gui.grp.notes", {"leader", "text", "mtext"}},
+                           {"gui.grp.marks", {"divide", "measure", "purge"}}}},
         {"gui.tab.survey", {{"gui.grp.points", {"ptimport", "ptexport"}},
                             {"gui.grp.asbuilt", {"asbuilt"}},
                             {"gui.grp.earth", {"ewtin", "ewcarto"}},
@@ -996,21 +1064,23 @@ void MainWindow::buildRibbon() {
                             {"gui.grp.bim", {"ifcimport", "ifcpanel"}},
                             {"gui.grp.import", {"bimimport", "kjimport"}},
                             {"gui.grp.district", {"city"}}}},
-        {"gui.tab.arch", {{"gui.grp.arch3d", {"armodel"}},
+        {"gui.tab.arch", {{"gui.grp.archdraw", {"wall", "door", "window", "room"}, {"rooms", "arsection", "arsheet", "ar3d"}},
+                          {"gui.grp.arch3d", {"armodel"}},
                           {"gui.grp.axes", {"axes"}},
                           {"gui.grp.facadegen", {"facade", "genplan"}},
                           {"gui.grp.render", {"export3d", "export3dmax", "export3due"}}}},
         {"gui.tab.view", {{"gui.grp.model", {"view2d", "view3d"}},
-                          {"gui.grp.camera", {"cam3d", "cut3d", "drive"}},
+                          {"gui.grp.camera", {"cam3d", "cut3d", "drive", "video"}},
                           {"gui.grp.cats", {"cats3d"}},
                           {"gui.grp.sheets", {"sheets"}},
                           {"gui.grp.zoom", {"extents"}, {"zoomin", "zoomout", "grid"}},
                           {"gui.grp.panels", {}, {"pnlayers", "pnprops", "pncmd"}}}},
-        {"gui.tab.analyze", {{"gui.grp.seismic", {"seismic", "geotech"}},
+        {"gui.tab.analyze", {{"gui.grp.seismic", {"seismic", "geotech", "femgui"}},
                              {"gui.grp.volume", {"ewvolume"}},
                              {"gui.grp.check", {"dist", "area", "list"}},
                              {"gui.grp.norms", {"normcheck", "normrules"}},
-                             {"gui.grp.reports", {"steelspec", "ifcpanel"}}}},
+                             {"gui.grp.reports", {"steelspec", "ifcpanel"}},
+                             {"gui.grp.lisp", {"appload", "plot"}}}},
     };
     // Ochiladigan menyuli tugmalar (3D kamera, kesim, toifalar)
     auto menuFor = [this](const QString& key, QToolButton* b) {
@@ -1373,6 +1443,9 @@ void MainWindow::buildDocks() {
         if (!tag.isEmpty()) selectTag(tag);
     });
     connect(smart_, &SmartPanel::select, this, [this](const QString& tag) { selectTag(tag); });
+    arProps_ = new PropPanel(propsBox_);
+    arProps_->hide();
+    pv->addWidget(arProps_, 3);
     propsList_ = new QPlainTextEdit(propsBox_);
     propsList_->setReadOnly(true);
     propsList_->setFont(QFont(QStringLiteral("DejaVu Sans Mono"), 9));
@@ -2707,7 +2780,8 @@ void MainWindow::rebuild3D(bool keepView) {
                                   t("gui.v3d.p.levels", {QString::number(pr.z0, 'f', 3), QString::number(pr.z1, 'f', 3)}),
                                   t("gui.v3d.p.concrete", {QString::fromStdString(pr.concrete)})},
                                  menu && building_->prismSource(static_cast<int>(&pr - bm.prisms.data())) ? QStringLiteral("bim:%1").arg(&pr - bm.prisms.data())
-                                                                                                          : QString());
+                                 : !menu ? QStringLiteral("ar:%1").arg(&pr - bm.prisms.data())
+                                         : QString());
             view3d_->addPrism(o, hs, pr.z0, pr.z1, QColor(int(c >> 16), int((c >> 8) & 255), int(c & 255)));
             view3d_->endObject();
         }
@@ -2865,6 +2939,80 @@ void MainWindow::makeSampleBuilding() {
     p.floorHeight = g.floorH;
     bd->setParams(p, bim::autoLayerMap(doc_));
     if (rebar_ && menuOpen(rebar_) && ownedHere(rebar_)) openRebar();
+}
+
+// ARMODEL elementi: tur, belgilar, beton sinfi, o'chirish — AREDIT buyrug'i orqali (AREDIT UNDO bilan qaytadi)
+void MainWindow::fillArProps(int index) {
+    const auto& ar = interp_->lastArModel();
+    if (!arProps_ || !ar || index < 0 || index >= static_cast<int>(ar->prisms.size())) { if (arProps_) arProps_->hide(); return; }
+    const bim::Prism& pr = ar->prisms[static_cast<std::size_t>(index)];
+    auto kn = [this](bim::ElemKind k) { return QString::fromStdString(loc_.tr(std::string("bim.kind.") + bim::kindKey(k))); };
+    const QString lvl = pr.level == 0 ? t("gui.bim.found") : t("gui.bim.level", {QString::number(pr.level)});
+    auto apply = [this, index](const QString& args) {
+        runLine(QStringLiteral("AREDIT %1 %2").arg(index).arg(args));
+        rebuild3D(true);
+        fillArProps(index);
+    };
+    arProps_->begin(kn(pr.kind) + " · " + lvl, t("gui.ar.edit"));
+    arProps_->info(t("gui.xp.volume"), QString::number(pr.volume(), 'f', 3) + QString::fromUtf8(" m³"));
+    arProps_->info(t("gui.xp.area"), QString::number(pr.area(), 'f', 3) + QString::fromUtf8(" m²"));
+    static const bim::ElemKind kinds[] = {bim::ElemKind::Column, bim::ElemKind::Wall, bim::ElemKind::Slab, bim::ElemKind::Roof, bim::ElemKind::Stair,
+                                          bim::ElemKind::Shaft, bim::ElemKind::Infill, bim::ElemKind::FoundationSlab, bim::ElemKind::StripFooting};
+    QStringList names;
+    int cur = 0;
+    for (std::size_t i = 0; i < std::size(kinds); ++i) {
+        names << kn(kinds[i]);
+        if (kinds[i] == pr.kind) cur = static_cast<int>(i);
+    }
+    arProps_->choice("kind", t("gui.ar.kind"), names, cur, [apply](int i) { apply(QStringLiteral("KIND=%1").arg(QString::fromLatin1(bim::kindKey(kinds[i])))); });
+    arProps_->number("z0", t("gui.ar.z0"), pr.z0, 3, [apply](double v) { apply(QStringLiteral("Z0=%1").arg(v, 0, 'f', 3)); }, "m");
+    arProps_->number("z1", t("gui.ar.z1"), pr.z1, 3, [apply](double v) { apply(QStringLiteral("Z1=%1").arg(v, 0, 'f', 3)); }, "m");
+    arProps_->text("conc", t("gui.ar.conc"), QString::fromStdString(pr.concrete), [apply](const QString& v) { if (!v.trimmed().isEmpty()) apply("CONC=" + v.trimmed()); });
+    arProps_->action("undo", t("gui.ar.undo"), [this, index] { runLine("AREDIT UNDO"); rebuild3D(true); fillArProps(index); });
+    arProps_->action("del", t("gui.ar.del"), [this, index] { runLine(QStringLiteral("AREDIT %1 DEL").arg(index)); rebuild3D(true); arProps_->hide(); }, true);
+    arProps_->end();
+    arProps_->show();
+}
+
+VideoDialog* MainWindow::openVideo() {
+    show3D(true);
+    if (!video_) {
+        video_ = new VideoDialog(
+            loc_, view3d_,
+            [this] {   // tanlangan chiziq (2D da) — yurish yo'li
+                std::vector<Vec3> pts;
+                for (EntityId id : view_->selection()) {
+                    const IEntity* e = doc_.find(id);
+                    if (auto* pl = dynamic_cast<const PolylineEntity*>(e)) {
+                        pts = pl->vertices();
+                        if (pl->isClosed() && !pts.empty()) pts.push_back(pts.front());
+                    } else if (auto* ln = dynamic_cast<const LineEntity*>(e)) pts = {ln->startPoint(), ln->endPoint()};
+                    else if (auto* cv = dynamic_cast<const ICurve*>(e)) { const double L = cv->length(); for (int k = 0; k <= 64; ++k) pts.push_back(cv->pointAtDistance(L * k / 64)); }
+                    if (!pts.empty()) break;
+                }
+                return pts;
+            },
+            [this] {
+                QString ids;
+                for (EntityId id : view_->selection()) ids += (ids.isEmpty() ? "" : ",") + QString::number(id);
+                return ids;
+            },
+            this);
+        video_->setStyleSheet(theme_.styleSheet);
+        connect(video_, &VideoDialog::commandReady, this, [this](const QString& line) { runLine(line); });
+    }
+    video_->show();
+    video_->raise();
+    return video_;
+}
+
+FemDialog* MainWindow::openFem() {
+    if (!fem_) {
+        fem_ = new FemDialog(loc_, this);
+        fem_->setStyleSheet(theme_.styleSheet);
+    }
+    showMenu(fem_);
+    return fem_;
 }
 
 SeismicDialog* MainWindow::openSeismic(int tab) {

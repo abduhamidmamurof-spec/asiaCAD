@@ -15,6 +15,7 @@
 #include <asiacad/bim/templates.h>
 #include <asiacad/bim/ifc.h>
 #include <asiacad/bim/norms.h>
+#include <asiacad/bim/smeta.h>
 #include <asiacad/civil/survey.h>
 #include <asiacad/civil/terrain.h>
 #include <asiacad/civil/excel.h>
@@ -62,6 +63,8 @@
 #include <functional>
 #include <exception>
 #include <iostream>
+#include <asiacad/lisp/dcl.h>
+#include <asiacad/lisp/lisp.h>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -365,7 +368,7 @@ TEST(i18n_dictionaries_complete) {
         CHECK(loc.hasMessage("desc." + c));
         CHECK(std::string(cli::commandSyntax(c)).size() > 0 || c == "EXTENTS" || c == "HELP" || c == "EXIT" || c == "LAYON" || c == "LAYUNISO" || c == "DEVCLEAR");
     }
-    CHECK(loc.canonicalCommands().size() == 122);
+    CHECK(loc.canonicalCommands().size() == 141);
 }
 TEST(i18n_no_alias_conflicts) {
     for (const auto& c : loadedLocalizer().conflicts()) {
@@ -3263,6 +3266,77 @@ TEST(ifc_cli_and_ifczip) {
     std::filesystem::remove(tmp);
 }
 
+// ---------------------------------------------------------------- BIM smeta (5D)
+TEST(smeta_from_ifc_model) {
+    bim::IfcModel m;
+    std::string err;
+    CHECK(bim::readIfc(dataPath("revit_sinov.ifc"), m, err));
+    const auto base = bim::defaultSmetaBase();
+    const auto r = bim::computeSmeta(m, base);
+    CHECK(r.elements == 6 && r.matched == 6 && r.unmatched.empty());
+    std::map<std::string, const bim::SmetaLine*> by;
+    for (const auto& L : r.lines) by[base.items[L.item].code] = &L;
+    const bim::IfcElement* w = nullptr;
+    const bim::IfcElement* bar = nullptr;
+    for (const auto& e : m.elements) {
+        if (e.type == "IFCWALL") w = &e;
+        if (e.type == "IFCREINFORCINGBAR") bar = &e;
+    }
+    // "Beton B25" devor -> monolit devor kalimi (gazoblok emas), hajm geometriyadan
+    CHECK(by.count("02-004") && w && std::abs(by["02-004"]->qty - w->volume) < 1e-9 && !by.count("04-003"));
+    // armatura: kg -> t (koeffitsient 0.001)
+    CHECK(by.count("03-001") && bar && std::abs(by["03-001"]->qty - bar->barMass * 0.001) < 1e-12);
+    CHECK(by.count("02-001") && by.count("02-002") && by.count("05-001") && by.count("02-005"));
+    // narx: miqdor × (material + ish haqi + mashina); ustama, foyda, QQS zanjiri
+    const auto& it = base.items[by["02-004"]->item];
+    CHECK(std::abs(by["02-004"]->total - by["02-004"]->qty * (it.material + it.labor + it.machine)) < 1e-6);
+    double sum = 0;
+    for (const auto& L : r.lines) sum += L.total;
+    CHECK(std::abs(r.direct - sum) < 1e-6);
+    const double ov = sum * base.overheadPct / 100, pr = (sum + ov) * base.profitPct / 100, vat = (sum + ov + pr) * base.vatPct / 100;
+    CHECK(std::abs(r.total - (sum + ov + pr + vat)) < 1e-6);
+    // IFC Qto ustun: NetVolume xossasi bo'lsa geometriya o'rniga
+    bim::IfcElement q = *w;
+    q.props.push_back({"Qto_WallBaseQuantities.NetVolume", "2.5"});
+    q.props.push_back({"Qto_WallBaseQuantities.NetSideArea", "14"});
+    const auto mq = bim::smetaMeasureElement(q);
+    CHECK(mq.fromQto && std::abs(mq.volume - 2.5) < 1e-12 && std::abs(mq.areaSide - 14) < 1e-12);
+    // material kaliti katta-kichik harf farqsiz, "|" — yoki
+    bim::SmetaBase b2;
+    b2.vatPct = 0;
+    bim::SmetaItem g;
+    g.code = "G";
+    g.measure = bim::SmetaMeasure::Count;
+    g.rule.category = "wall|slab";
+    g.rule.material = "xyz|beton";
+    b2.items.push_back(g);
+    const auto r2 = bim::computeSmeta(m, b2);
+    CHECK(r2.matched == 2 && r2.lines.size() == 1 && std::abs(r2.lines[0].qty - 2) < 1e-12);   // devor va plita ("Beton B25"), ustun — materialsiz
+}
+TEST(smeta_base_workbook_and_cli) {
+    auto tr = [](const std::string& k) { return loadedLocalizer().tr(k); };
+    const auto base = bim::defaultSmetaBase();
+    const auto back = bim::smetaBaseFromWorkbook(xlsx::fromBytes(xlsx::toBytes(bim::smetaBaseWorkbook(base, tr))));
+    CHECK(back.items.size() == base.items.size() && back.items[3].code == base.items[3].code && std::abs(back.items[3].material - base.items[3].material) < 1e-6);
+    CHECK(back.items[7].measure == bim::SmetaMeasure::Mass && std::abs(back.items[7].factor - 0.001) < 1e-12 && back.items[8].rule.material == base.items[8].rule.material);
+    CHECK(std::abs(back.vatPct - base.vatPct) < 1e-9 && std::abs(back.overheadPct - base.overheadPct) < 1e-9 && back.title == base.title);
+    bool threw = false;
+    try { bim::smetaBaseFromWorkbook(xlsx::Workbook{}); } catch (const Error&) { threw = true; }
+    CHECK(threw);
+    const auto dir = std::filesystem::temp_directory_path();
+    const std::string bp = (dir / "asiacad_smeta_baza.xlsx").string(), sp = (dir / "asiacad_smeta.xlsx").string();
+    const auto s = runScript("uz", {"SMETA NAMUNA \"" + bp + "\"", "SMETA \"" + dataPath("revit_sinov.ifc") + "\" BASE=\"" + bp + "\" VAT=0 XLSX=\"" + sp + "\""});
+    CHECK(s.find("Namuna narxlar bazasi saqlandi") != std::string::npos);
+    CHECK(s.find("Smeta: 6 ta element, moslandi 6, moslanmadi 0") != std::string::npos);
+    CHECK(s.find("Smeta saqlandi") != std::string::npos);
+    const auto wb = xlsx::load(sp);
+    CHECK(wb.sheets.size() == 3 && wb.sheets[0].name == "Smeta" && wb.sheets[1].rows.size() == 7);
+    const auto e = runScript("en", {"ESTIMATE \"" + dataPath("revit_sinov.ifc") + "\""});
+    CHECK(e.find("sample base") != std::string::npos && e.find("TOTAL") != std::string::npos);
+    std::filesystem::remove(bp);
+    std::filesystem::remove(sp);
+}
+
 // ---------------------------------------------------------------- ShNQ normativ tekshiruvi
 TEST(norms_expressions) {
     bim::NormVars v{{"d", 0.025}, {"hostT", 0.2}, {"host", std::string("COLUMN")}, {"stirrup", 0.0}, {"lean", 1.0}};
@@ -5405,4 +5479,251 @@ TEST(cli_fem_command) {
     CHECK(ok.find("red 0") != std::string::npos);
     CHECK(runScript("uz", {"FEM GEN=6x2 FLOORS=2 DESIGN CONC=B99"}).find("Foydalanish") != std::string::npos ||
           runScript("uz", {"FEM GEN=6x2 FLOORS=2 DESIGN CONC=B99"}).find("Xato") != std::string::npos);
+}
+TEST(lisp_core) {
+    std::ostringstream o;
+    lisp::Lisp L(o);
+    auto ev = [&](const std::string& s) { return L.toString(L.evalString(s), true); };
+    CHECK(ev("(+ 1 2 3)") == "6");
+    CHECK(ev("(/ 7 2)") == "3");
+    CHECK(ev("(/ 7 2.0)") == "3.5");
+    CHECK(ev("(mapcar '(lambda (x) (* x x)) '(1 2 3))") == "(1 4 9)");
+    CHECK(ev("(defun f (n) (if (< n 2) 1 (* n (f (1- n))))) (f 10)") == "3628800");
+    CHECK(ev("(setq a 1) (defun g (/ a) (setq a 5)) (g) a") == "1");  // mahalliy o'zgaruvchi
+    CHECK(ev("(strcat \"a\" (itoa 5) (rtos 3.14159 2 2))") == "\"a53.14\"");
+    CHECK(ev("(wcmatch \"ABC12\" \"A*#\")") == "T");
+    CHECK(ev("(wcmatch \"LINE\" \"ARC,~CIRCLE\")") == "T");
+    CHECK(ev("(vl-sort '(3 1 2) '<)") == "(1 2 3)");
+    CHECK(ev("(cdr (assoc 'b '((a . 1) (b . 2))))") == "2");
+    CHECK(ev("(vl-string-subst \"X\" \"b\" \"abc\")") == "\"aXc\"");
+    CHECK(ev("(distance '(0 0) '(3 4))") == "5.0");
+    CHECK(ev("(inters '(0 0) '(10 10) '(0 10) '(10 0))") == "(5.0 5.0 0.0)");
+    CHECK(ev("(angtos (/ pi 2) 0 0)") == "\"90\"");
+    CHECK(ev("(vl-catch-all-error-message (vl-catch-all-apply '/ '(1 0)))") == "\"divide by zero\"");
+    CHECK(ev("(foreach x '(1 2 3) (setq s (if s (+ s x) x)))") == "6");
+    CHECK(ev("(read \"(a . 2)\")") == "(A . 2)");
+    bool threw = false;
+    try { L.evalString("(nofunc 1)"); } catch (const lisp::LispError& e) { threw = std::string(e.what()).find("NOFUNC") != std::string::npos; }
+    CHECK(threw);
+}
+TEST(cli_lisp_appload) {
+    const std::string f = std::string(ASIACAD_TEST_DATA) + "/sinov.lsp";
+    const auto s = runScript("uz", {"APPLOAD \"" + f + "\"", "KVADRAT 0,0 10", "(command \"_.circle\" \"_non\" '(20 20) 5)", "JAMIUZUN", "VLASINOV",
+                                    "(cdr (assoc 8 (entget (entlast))))", "(sslength (ssget \"X\" '((-4 . \"<OR\") (0 . \"CIRCLE\") (8 . \"VLA\") (-4 . \"OR>\"))))",
+                                    "(setq e (entget (car (list (ssname (ssget \"X\" '((0 . \"CIRCLE\"))) 0)))))",
+                                    "(entmod (subst (cons 40 7.0) (assoc 40 e) e))", "LIST 3", "(vla-nomethod 1)", "BILMAYMAN 1"});
+    CHECK(s.find("LISP yuklandi: sinov.lsp; buyruqlar: JAMIUZUN, KVADRAT, VLASINOV") != std::string::npos);
+    CHECK(s.find("Poliliniya #1") != std::string::npos);
+    CHECK(s.find("Jami uzunlik: 65.558") != std::string::npos);  // 10+10+14.142 + 2π·5
+    CHECK(s.find("L=5.00 VLA") != std::string::npos);
+    CHECK(s.find("\"VLA\"") != std::string::npos);
+    CHECK(s.find("\n2\n") != std::string::npos);
+    CHECK(s.find("r=7.0000") != std::string::npos);
+    CHECK(s.find("LISP xatosi") != std::string::npos);
+    CHECK(s.find("Nomaʼlum buyruq") != std::string::npos || s.find("BILMAYMAN") != std::string::npos);
+    // ko'p qatorli ifoda va undo: bitta LISP buyrug'i — bitta qadam
+    const auto u = runScript("en", {"APPLOAD \"" + f + "\"", "KVADRAT 0,0 4", "UNDO", "LIST", "(setq x", "  (+ 2", "3))", "!x"});
+    CHECK(u.find("Total: 0") != std::string::npos);
+    CHECK(u.find("\n5\n") != std::string::npos);
+}
+TEST(lisp_dcl_parse) {
+    const auto ds = lisp::parseDcl(R"(
+        // izoh
+        num : edit_box { edit_width = 6; }
+        d : dialog { label = "T"; : row { : num { key = "a"; value = "1"; } : button { key = "b"; label = "Go"; } } ok_cancel; spacer; }
+        proto_only : column { }
+    )");
+    CHECK(ds.size() == 1 && ds.count("d"));
+    const auto& d = ds.at("d");
+    CHECK(d.attr("label") == "T");
+    CHECK(d.kids.size() == 3);
+    CHECK(d.kids[0].kids[0].type == "edit_box" && d.kids[0].kids[0].attr("edit_width") == "6" && d.kids[0].kids[0].attr("key") == "a");
+    CHECK(d.kids[1].type == "row" && d.kids[1].kids.size() == 2 && d.kids[1].kids[0].attr("key") == "accept");
+    CHECK(d.kids[2].type == "spacer");
+    bool threw = false;
+    try { lisp::parseDcl("x : dialog { : row { }"); } catch (const lisp::LispError&) { threw = true; }
+    CHECK(threw);
+}
+TEST(cli_lisp_dcl) {
+    // UI siz (CLI): dialog "bekor" qaytaradi, ogohlantirish chiqadi, chizma o'zgarmaydi
+    const std::string f = std::string(ASIACAD_TEST_DATA) + "/sinov_dcl.lsp";
+    const auto s = runScript("en", {"APPLOAD \"" + f + "\"", "DCLAYLANA", "LIST"});
+    CHECK(s.find("Holat 0") != std::string::npos);
+    CHECK(s.find("LISP: not supported (skipped): DCL: sinov") != std::string::npos);
+    CHECK(s.find("Total: 0") != std::string::npos);
+}
+TEST(cli_draft2_commands) {
+    const auto s = runScript("en", {"LINE 0,0 100,0", "PLINE 0,0 10,0 10,10 0,10 CLOSE", "DIVIDE 2 4", "MEASURE 1 30",
+                                    "MTEXT 0,50 2.5 \"First line|Second line is a longer text\" W=30 J=TC",
+                                    "DIMLINEAR 0,0 20,0 0,-10", "DIMCONTINUE 50,0 100,0", "DIMBASELINE 70,0 BASE=12", "LIST"});
+    CHECK(s.find("Marks placed: 3") != std::string::npos);
+    CHECK(s.find("POINT (10.0000, 10.0000, 0.0000)") != std::string::npos);   // kvadrat perimetri 40 / 4
+    CHECK(s.find("POINT (90.0000, 0.0000, 0.0000)") != std::string::npos);    // har 30 da
+    CHECK(s.find("Multiline text: 3 line(s)") != std::string::npos);
+    CHECK(s.find("TEXT \"Second line is a\"") != std::string::npos || s.find("TEXT \"Second line is a longer\"") != std::string::npos);
+    CHECK(s.find("DIMENSION ROTATED \"30\" p1=(20.0000, 0.0000) p2=(50.0000, 0.0000)") != std::string::npos);
+    CHECK(s.find("DIMENSION ROTATED \"50\" p1=(50.0000, 0.0000) p2=(100.0000, 0.0000)") != std::string::npos);
+    CHECK(s.find("DIMENSION ROTATED \"70\" p1=(0.0000, 0.0000) p2=(70.0000, 0.0000)") != std::string::npos);
+    // PURGE: ishlatilmagan qatlam va blok; undo qaytaradi
+    const auto p = runScript("en", {"LAYER EMPTY", "CLAYER USED", "LINE 0,0 1,1", "CLAYER 0", "CIRCLE 5,5 1", "BLOCK BX 5,5 LAST",
+                                    "ERASE LAST", "PURGE LIST", "PURGE", "PURGE", "UNDO", "PURGE LIST"});
+    CHECK(p.find("Unused: 1 layer(s), 1 block(s): EMPTY, BX") != std::string::npos);
+    CHECK(p.find("Purged: EMPTY, BX") != std::string::npos);
+    CHECK(p.find("Nothing to purge") != std::string::npos);
+    CHECK(p.rfind("Unused: 1 layer(s), 1 block(s)") > p.find("Nothing to purge"));
+    CHECK(runScript("en", {"DIMCONTINUE 5,5"}).find("No linear dimension") != std::string::npos);
+}
+TEST(cli_plot_pdf) {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "asiacad_plot_test";
+    fs::create_directories(dir);
+    const std::string f1 = (dir / "m.pdf").string(), f2 = (dir / "s.pdf").string();
+    const auto s = runScript("en", {"LINE 0,0 200,0", "CIRCLE 100,60 40", "PLINE 120,10 190,10 190,50 120,50 CLOSE", "HATCH 3 ANSI31 2",
+                                    "TEXT 10,100 5 \"Привет gʻisht ğş\"", "PLOT \"" + f1 + "\" A4 SCALE=1:1",
+                                    "SHEET NEW L-1 A3", "SHEET VIEW L-1 0,0 0.2,0.12", "PLOT \"" + f2 + "\" SHEET=ALL MONO", "PLOT \"" + f2 + "\" A9"});
+    CHECK(s.find("1 page(s), scale 1:1") != std::string::npos);
+    std::ifstream in(f1, std::ios::binary);
+    std::stringstream ss;
+    ss << in.rdbuf();
+    const std::string pdf = ss.str();
+    CHECK(pdf.rfind("%PDF-1.4", 0) == 0 && pdf.find("%%EOF") != std::string::npos);
+    const bool ttf = pdf.find("/FontFile2") != std::string::npos;
+    CHECK(ttf || pdf.find("/Helvetica") != std::string::npos);
+    if (ttf) CHECK(pdf.find("/ToUnicode") != std::string::npos && pdf.find("<0041>") == std::string::npos);
+    CHECK(pdf.find(" Tj ET") != std::string::npos);
+    CHECK(fs::file_size(f2) > 1000);
+    CHECK(s.find("Plot error: paper: A9") != std::string::npos);
+    fs::remove_all(dir);
+}
+TEST(arch_walls_rooms_section) {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "asiacad_arch_test";
+    fs::create_directories(dir);
+    const std::string xl = (dir / "rooms.xlsx").string(), pdf = (dir / "ar.pdf").string(), acad = (dir / "ar.acad").string();
+    const auto s = runScript("en", {"WALL 0,0 10,0 10,8 0,8 CLOSE T=0.4", "WALL 6,0 6,8 T=0.2", "DOOR 6,4 W=0.9", "WINDOW 3,0 W=1.5",
+                                    "WINDOW 8,8 W=1.2 SILL=1", "DOOR 2,8 W=1.0 OUT", "WINDOW 9.95,0 W=1.5", "DOOR 6,4.5 W=0.9",
+                                    "ROOM 3,4 NAME=Living TYPE=LIVING", "ROOM 8,4 NAME=Corridor TYPE=CORRIDOR", "ROOM 20,20",
+                                    "ROOMS XLSX=\"" + xl + "\"", "ARSECTION -1,3 11,3 AT=0,-20 FLOORS=2", "ARSECTION -1,-3 11,-3 AT=0,-35",
+                                    "ARSHEET AR-1 A2", "PLOT \"" + pdf + "\" SHEET=AR-1", "AR3D FLOORS=2", "AR3D FLOORS=2", "SAVE \"" + acad + "\""});
+    CHECK(s.find("3D: 5 wall(s), 2 floor(s)") != std::string::npos);
+    CHECK(s.find("Walls: 4, length 36.00 m, thickness 0.4 m") != std::string::npos);
+    CHECK(s.find("Door 0.9×2.1 m added to wall W2-1") != std::string::npos);
+    CHECK(s.find("Window 1.2×1.5 m added to wall W1-3") != std::string::npos);
+    CHECK(s.find("Opening does not fit in wall W1-1 (end)") != std::string::npos);
+    CHECK(s.find("Opening does not fit in wall W2-1 (overlap)") != std::string::npos);
+    CHECK(s.find("Living: net 43.32 m², by axes 48.00 m²") != std::string::npos);   // (6-0.2-0.1)×(8-0.4)
+    CHECK(s.find("Corridor: net 28.12 m², by axes 32.00 m²") != std::string::npos);
+    CHECK(s.find("No closed room around this point") != std::string::npos);
+    CHECK(s.find("Rooms: 2; net 71.44 m², rentable 43.32 m², building gross 87.36 m²") != std::string::npos);  // 10.4×8.4
+    CHECK(s.find("Section 1-1: 3 wall(s) cut") != std::string::npos);
+    CHECK(s.find("Section 2-2: elevation (no walls cut)") != std::string::npos);
+    CHECK(s.find("1 page(s)") != std::string::npos);
+    const auto wb = xlsx::load(xl);
+    CHECK(!wb.sheets.empty() && wb.sheets[0].rows.size() == 5 && wb.sheets[0].str(1, 0) == "Living");
+    // saqlangan fayldan devorlar qayta tiklanadi: eshikni olib tashlash va undo
+    const auto r = runScript("en", {"OPEN \"" + acad + "\"", "DOOR 6,4 DEL", "ROOM 3,4", "UNDO", "UNDO", "DOOR 6,4 DEL"});
+    CHECK(r.find("Opening removed, wall W2-1 redrawn") != std::string::npos);
+    CHECK(r.rfind("Opening removed") > r.find("Undone"));
+    fs::remove_all(dir);
+}
+TEST(fem_shell_plate) {
+    namespace F = bim::fem;
+    // Kvadrat plastina a = 4 m, t = 0.05, ν = 0.3, q = 10 kPa; 12×12 to'r. Timoshenko: SS w = 0.00406·q·a⁴/D, Mx = 0.0479·q·a²;
+    // qisilgan w = 0.00126·q·a⁴/D
+    for (int clamped = 0; clamped < 2; ++clamped) {
+        F::Model m;
+        const double a = 4, t = 0.05, E = 3.0e7, nu = 0.3, q = 10;   // a/t = 80 — yupqa (Kirxgof)
+        m.mats[1] = {E, E / (2 * (1 + nu))};
+        const int n = 12;
+        auto id = [&](int j, int i) { return 1 + j * (n + 1) + i; };
+        for (int j = 0; j <= n; ++j)
+            for (int i = 0; i <= n; ++i) {
+                F::Node nd;
+                nd.id = id(j, i);
+                nd.p = {a * i / n, a * j / n, 0};
+                const bool edge = i == 0 || j == 0 || i == n || j == n;
+                if (edge) nd.fix = {true, true, true, clamped == 1, clamped == 1, true};
+                m.nodes.push_back(nd);
+            }
+        int sid = 1;
+        for (int j = 0; j < n; ++j)
+            for (int i = 0; i < n; ++i) {
+                F::Shell sh;
+                sh.id = sid;
+                sh.n = {id(j, i), id(j, i + 1), id(j + 1, i + 1), id(j + 1, i)};
+                sh.mat = 1;
+                sh.t = t;
+                m.shells.push_back(sh);
+                m.press[sid++] = -q;
+            }
+        const auto r = F::solveStatic(m);
+        const double D = E * t * t * t / (12 * (1 - nu * nu));
+        const double w = -r.disp[static_cast<std::size_t>(m.index(id(n / 2, n / 2)))][2];
+        const double wRef = (clamped ? 0.00126 : 0.00406) * q * a * a * a * a / D;
+        CHECK(std::abs(w / wRef - 1) < 0.02);
+        double rz = 0;
+        for (const auto& [nd, R] : r.reactions) rz += R[2];
+        CHECK(std::abs(rz - q * a * a) < 1e-6 * q * a * a + 1e-6);   // muvozanat
+        if (!clamped) {
+            // markazga eng yaqin to'rtta elementdagi Mx o'rtachasi
+            double mx = 0;
+            for (int s : {id(n / 2 - 1, n / 2 - 1), id(n / 2 - 1, n / 2), id(n / 2, n / 2 - 1), id(n / 2, n / 2)}) (void)s;
+            for (int jj : {n / 2 - 1, n / 2})
+                for (int ii : {n / 2 - 1, n / 2}) mx += std::abs(r.shell[static_cast<std::size_t>(jj * n + ii)].Mx) / 4;
+            CHECK(std::abs(mx / (0.0479 * q * a * a) - 1) < 0.08);
+        }
+    }
+    // ramka + plitalar: generator, statik muvozanat, xos tebranishlar
+    const auto m = F::frameWithSlabs({6, 6}, {6}, 2, 3.3, 0.4, 0.4, 0.3, 0.6, 3.0e7, 1.0, 10.0, 0.2, 3);
+    CHECK(m.shells.size() == 2u * 6 * 3 && m.beams.size() > 0);
+    const auto r = F::solveStatic(m);
+    double rz = 0;
+    for (const auto& [nd, R] : r.reactions) rz += R[2];
+    CHECK(std::abs(rz - 10.0 * 12 * 6 * 2) < 1e-3);
+    const auto modes = F::solveModes(m, 3);
+    CHECK(modes.size() == 3 && modes[0].T > 0.05 && modes[0].T < 2.0);
+    // matn formati: yozib, qayta o'qish
+    const auto cli = runScript("en", {"FEM GEN=6x2;6 FLOORS=2 SLAB=0.2 DIV=3 MODES=6"});
+    CHECK(cli.find("Shells (slabs): 36") != std::string::npos);
+    const auto m2 = F::parseModel(F::writeModel(m));
+    CHECK(m2.shells.size() == m.shells.size() && m2.press.size() == m.press.size() && m2.smass.size() == m.smass.size());
+}
+TEST(cli_aredit) {
+    const std::string f = std::string(ASIACAD_EXAMPLES_DIR) + "/ar_loyiha/ar_loyiha.dxf";
+    const auto s = runScript("en", {"AREDIT 0 H=4", "ARMODEL \"" + f + "\"", "AREDIT 0 KIND=SLAB CONC=B30", "AREDIT 0 Z0=5 Z1=4", "AREDIT UNDO",
+                                    "AREDIT UNDO", "AREDIT 999999 DEL", "AREDIT 1 DEL"});
+    CHECK(s.find("No 3D model from plans") != std::string::npos);
+    CHECK(s.find("Element 0 changed") != std::string::npos);
+    CHECK(s.find("Invalid value: Z0=5 Z1=4") != std::string::npos);
+    CHECK(s.find("3D model edit undone") != std::string::npos);
+    CHECK(s.find("Nothing to undo") != std::string::npos);
+    CHECK(s.find("Invalid value: 999999") != std::string::npos);
+    CHECK(s.find("Element 1 changed") != std::string::npos);
+}
+TEST(camera_path_export) {
+    const auto p = bim::walkPath({{0, 0, 0}, {14, 0, 0}, {14, 14, 0}}, 1.7, 1.4, 5);
+    CHECK(std::abs(p.duration() - 20.0) < 1e-9);                       // 28 m / 1.4 m/s
+    const auto k = bim::cameraAt(p, 5.0);
+    CHECK(std::abs(k.eye.x - 7.0) < 1e-6 && std::abs(k.eye.z - 1.7) < 1e-9 && std::abs(k.target.x - 12.0) < 1e-6);
+    const auto e = bim::cameraAt(p, 20.0);
+    CHECK(std::abs(e.eye.y - 14.0) < 1e-6 && e.target.y > e.eye.y);  // oxirida ham oldinga qaraydi
+    const auto o = bim::orbitPath({0, 0, 0}, 10, 5, 12, 1);
+    CHECK(std::abs(o.duration() - 12) < 1e-9 && std::abs(o.keys.front().eye.distanceTo(o.keys.back().eye)) < 1e-6);
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "asiacad_cam_test";
+    fs::create_directories(dir);
+    const std::string gl = (dir / "s.gltf").string(), py = (dir / "ue.py").string(), ms = (dir / "s.ms").string();
+    const auto s = runScript("en", {"WALL 0,0 10,0 10,8 0,8 CLOSE", "AR3D", "PLINE -5,-5 15,-5 15,13",
+                                    "EXPORT3D \"" + gl + "\" CAMPATH=LAST ORBIT=20 FPS=25 MAX=\"" + ms + "\" UNREAL=\"" + py + "\""});
+    CHECK(s.find("Camera path:") != std::string::npos);
+    std::ifstream u(py);
+    std::stringstream us;
+    us << u.rdbuf();
+    CHECK(us.str().find("make_sequence(\"AC_Kamera_Yol\", 25") != std::string::npos && us.str().find("make_sequence(\"AC_Kamera_Dron_Aylanish\"") != std::string::npos);
+    std::ifstream mx(ms);
+    std::stringstream mss;
+    mss << mx.rdbuf();
+    CHECK(mss.str().find("animate on") != std::string::npos && mss.str().find("camYol2") != std::string::npos);
+    CHECK(fs::exists(dir / "s_kamera.csv"));
+    fs::remove_all(dir);
 }

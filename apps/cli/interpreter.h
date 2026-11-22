@@ -7,11 +7,23 @@
 #include <asiacad/core/dimension.h>
 #include <asiacad/i18n/localizer.h>
 
+#include <functional>
+#include <memory>
 #include <optional>
 #include <ostream>
 #include <string>
 #include <vector>
 
+namespace asiacad::cli {
+
+struct LispCtx;  // interpreter_lisp.cpp: AutoLISP holati
+}
+namespace asiacad::lisp {
+class DclUi;
+}
+namespace asiacad::bim {
+struct ArchWall;
+}
 namespace asiacad::cli {
 
 class Interpreter {
@@ -26,7 +38,7 @@ public:
     const std::string& currentFile() const { return currentFile_; }
     // ARMODEL natijasi (GUI 3D ko'rinishi uchun); bo'sh — hali yaratilmagan
     const std::optional<bim::BuildingModel>& lastArModel() const { return lastAr_; }
-    void clearArModel() { lastAr_.reset(); }
+    void clearArModel() { lastAr_.reset(); arHist_.clear(); }
     // Bir nechta ochiq chizma (varaqlar): chizmaga tegishli holat (joriy qatlam, rang, LAST, fayl ...) almashtiriladi
     struct DocState {
         std::string layer = "0";
@@ -46,8 +58,14 @@ public:
         std::swap(isoSaved_, s.isoSaved);
         std::swap(lastAr_, s.arModel);
     }
+    // AutoLISP: yuklangan C:XXX buyruqlari (GUI avtoto'ldirish uchun)
+    std::vector<std::string> lispCommands() const;
+    // LISP get* so'rovlari uchun kiritish (GUI: dialog); qaytaradi false — bekor (nil)
+    std::function<bool(std::string& out, const std::string& prompt)> lispInput;
+    lisp::DclUi* dclUi = nullptr;  // DCL dialoglarini chizuvchi (GUI)
 
 private:
+    friend struct LispCtx;
     using Args = std::vector<std::string>;
     void dispatch(const std::string& canon, const Args& a);
     bool dispatchDraft(const std::string& canon, const Args& a);  // interpreter_draft.cpp: Draw/Modify/Layers/Annotation, belgilar
@@ -81,6 +99,16 @@ private:
     void addMany(const char* name, std::vector<std::unique_ptr<IEntity>> es);
     void addLayered(const std::string& name, std::vector<std::unique_ptr<IEntity>> es);  // qatlamlari saqlanadi (yo'qlari yaratiladi)
     void addDimension(const std::string& canon, std::unique_ptr<DimensionEntity> d);
+    // interpreter_lisp.cpp: APPLOAD, LISP, "(" qatorlari, C:XXX
+    bool dispatchLisp(const std::string& canon, const Args& a);
+    bool dispatchDraft2(const std::string& canon, const Args& a);
+    bool dispatchArch(const std::string& canon, const Args& a);    // interpreter_arch.cpp: devor, eshik, deraza, xona, kesim
+    void replaceWall(const bim::ArchWall& w, const std::string& name);  // interpreter_draft2.cpp: MTEXT, DIMCONTINUE, DIVIDE, PURGE ...
+    bool runLispLine(const std::string& line);
+    bool runLispCommand(const std::string& name, const Args& a);
+    void reportLispWarnings(std::size_t before);
+    LispCtx& lispCtx();
+    std::shared_ptr<LispCtx> lisp_;
     void say(const std::string& key, const std::vector<std::string>& args = {});
     void help();
 
@@ -91,6 +119,7 @@ private:
     std::string layer_ = "0";
     int color_ = kColorByLayer;
     std::optional<bim::BuildingModel> lastAr_;
+    std::vector<bim::BuildingModel> arHist_;   // AREDIT tarixi (AREDIT UNDO)
     std::vector<EntityId> last_;  // oxirgi yaratilgan obyektlar (LAST tanlovi)
     mutable Vec3 lastPt_;         // @dx,dy nisbiy kiritish uchun
     std::string currentFile_;     // OPEN/SAVE qilingan .acad fayl

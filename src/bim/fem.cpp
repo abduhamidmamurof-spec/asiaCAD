@@ -70,8 +70,26 @@ Model parseModel(const std::string& text) {
             if (!(ls >> id >> q.x >> q.y >> q.z)) throw bad();
             auto& Q = m.qloads[id];
             Q = Q + q;
+        } else if (k == "SHELL") {
+            Shell sh;
+            if (!(ls >> sh.id >> sh.n[0] >> sh.n[1] >> sh.n[2] >> sh.n[3] >> sh.mat >> sh.t)) throw bad();
+            m.shells.push_back(sh);
+        } else if (k == "PRESS") {
+            int id; double p;
+            if (!(ls >> id >> p)) throw bad();
+            m.press[id] += p;
+        } else if (k == "SMASS") {
+            int id; double v;
+            if (!(ls >> id >> v)) throw bad();
+            m.smass[id] += v;
         } else throw bad();
     }
+    for (const auto& sh : m.shells) {
+        if (!m.mats.count(sh.mat) || sh.t <= 0) throw std::runtime_error("fem: shell " + std::to_string(sh.id));
+        for (int q : sh.n) if (m.index(q) < 0) throw std::runtime_error("fem: shell " + std::to_string(sh.id));
+    }
+    for (const auto& [id, p] : m.press)
+        if (std::none_of(m.shells.begin(), m.shells.end(), [&](const Shell& sh) { return sh.id == id; })) throw std::runtime_error("fem: press " + std::to_string(id));
     for (const auto& [id, q] : m.qloads)
         if (std::none_of(m.beams.begin(), m.beams.end(), [&](const Beam& b) { return b.id == id; })) throw std::runtime_error("fem: qload " + std::to_string(id));
     for (const auto& b : m.beams)
@@ -96,6 +114,9 @@ std::string writeModel(const Model& m) {
     for (const auto& [n, v] : m.mass) o << "MASS " << n << ' ' << v << '\n';
     for (const auto& [n, f] : m.loads) o << "LOAD " << n << ' ' << f[0] << ' ' << f[1] << ' ' << f[2] << ' ' << f[3] << ' ' << f[4] << ' ' << f[5] << '\n';
     for (const auto& [b, q] : m.qloads) o << "QLOAD " << b << ' ' << q.x << ' ' << q.y << ' ' << q.z << '\n';
+    for (const auto& sh : m.shells) o << "SHELL " << sh.id << ' ' << sh.n[0] << ' ' << sh.n[1] << ' ' << sh.n[2] << ' ' << sh.n[3] << ' ' << sh.mat << ' ' << sh.t << '\n';
+    for (const auto& [id, p] : m.press) o << "PRESS " << id << ' ' << p << '\n';
+    for (const auto& [id, v] : m.smass) o << "SMASS " << id << ' ' << v << '\n';
     return o.str();
 }
 
@@ -153,6 +174,175 @@ Mat12 globalK(const Mat12& k, const Mat3& R) {
             g[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)] = s;
         }
     return g;
+}
+
+// ------------------------------------------------------------------ MITC4 yassi qobiq
+using Mat24 = std::array<std::array<double, 24>, 24>;
+struct ShellGeom {
+    Vec3 c, ex, ey, ez;
+    double x[4], y[4];
+    double area = 0;
+};
+ShellGeom shellGeom(const Model& m, const Shell& sh) {
+    ShellGeom g;
+    Vec3 p[4];
+    for (int i = 0; i < 4; ++i) p[i] = m.nodes[static_cast<std::size_t>(m.index(sh.n[static_cast<std::size_t>(i)]))].p;
+    g.c = (p[0] + p[1] + p[2] + p[3]) * 0.25;
+    Vec3 z = (p[2] - p[0]).cross(p[3] - p[1]);
+    if (z.length() < 1e-12) throw std::runtime_error("fem: degenerate shell " + std::to_string(sh.id));
+    g.ez = z * (1.0 / z.length());
+    Vec3 x = (p[1] + p[2] - p[0] - p[3]);
+    x = x - g.ez * x.dot(g.ez);
+    if (x.length() < 1e-12) x = p[1] - p[0];
+    g.ex = x * (1.0 / x.length());
+    g.ey = g.ez.cross(g.ex);
+    for (int i = 0; i < 4; ++i) { const Vec3 d = p[i] - g.c; g.x[i] = d.dot(g.ex); g.y[i] = d.dot(g.ey); }
+    return g;
+}
+constexpr double kXi[4] = {-1, 1, 1, -1}, kEta[4] = {-1, -1, 1, 1};
+struct ShapeAt {
+    double N[4], dx[4], dy[4], detJ, xr, xs, yr, ys, ji[2][2];
+};
+ShapeAt shapeAt(const ShellGeom& g, double r, double s) {
+    ShapeAt a{};
+    double dr[4], ds[4];
+    for (int i = 0; i < 4; ++i) {
+        a.N[i] = 0.25 * (1 + r * kXi[i]) * (1 + s * kEta[i]);
+        dr[i] = 0.25 * kXi[i] * (1 + s * kEta[i]);
+        ds[i] = 0.25 * kEta[i] * (1 + r * kXi[i]);
+        a.xr += dr[i] * g.x[i]; a.yr += dr[i] * g.y[i];
+        a.xs += ds[i] * g.x[i]; a.ys += ds[i] * g.y[i];
+    }
+    a.detJ = a.xr * a.ys - a.xs * a.yr;
+    if (a.detJ <= 1e-14) throw std::runtime_error("fem: distorted shell");
+    a.ji[0][0] = a.ys / a.detJ; a.ji[0][1] = -a.yr / a.detJ;
+    a.ji[1][0] = -a.xs / a.detJ; a.ji[1][1] = a.xr / a.detJ;
+    for (int i = 0; i < 4; ++i) {
+        a.dx[i] = a.ji[0][0] * dr[i] + a.ji[0][1] * ds[i];
+        a.dy[i] = a.ji[1][0] * dr[i] + a.ji[1][1] * ds[i];
+    }
+    return a;
+}
+// lokal erkinliklar: tugun i — 6i+(u v w θx θy θz); βx = θy, βy = −θx
+using Row24 = std::array<double, 24>;
+void bMembrane(const ShapeAt& a, Row24 B[3]) {
+    for (int k = 0; k < 3; ++k) B[k].fill(0);
+    for (int i = 0; i < 4; ++i) {
+        B[0][6 * i] = a.dx[i];
+        B[1][6 * i + 1] = a.dy[i];
+        B[2][6 * i] = a.dy[i]; B[2][6 * i + 1] = a.dx[i];
+    }
+}
+void bBending(const ShapeAt& a, Row24 B[3]) {
+    for (int k = 0; k < 3; ++k) B[k].fill(0);
+    for (int i = 0; i < 4; ++i) {
+        B[0][6 * i + 4] = a.dx[i];                               // ∂βx/∂x
+        B[1][6 * i + 3] = -a.dy[i];                              // ∂βy/∂y
+        B[2][6 * i + 4] = a.dy[i]; B[2][6 * i + 3] = -a.dx[i];   // ∂βx/∂y + ∂βy/∂x
+    }
+}
+// MITC4 ko'ndalang siljish: kovariant deformatsiyalar bog'lash nuqtalarida, so'ng interpolyatsiya
+void bShear(const ShellGeom& g, double r, double s, Row24 B[2]) {
+    auto cov = [&](double rr, double ss, bool alongR) {
+        const ShapeAt t = shapeAt(g, rr, ss);
+        Row24 row{};
+        for (int i = 0; i < 4; ++i) {
+            const double dN = alongR ? 0.25 * kXi[i] * (1 + ss * kEta[i]) : 0.25 * kEta[i] * (1 + rr * kXi[i]);
+            const double xd = alongR ? t.xr : t.xs, yd = alongR ? t.yr : t.ys;
+            row[static_cast<std::size_t>(6 * i + 2)] = dN;
+            row[static_cast<std::size_t>(6 * i + 4)] = t.N[i] * xd;    // βx·x,r
+            row[static_cast<std::size_t>(6 * i + 3)] = -t.N[i] * yd;   // βy·y,r
+        }
+        return row;
+    };
+    const Row24 rA = cov(0, 1, true), rC = cov(0, -1, true), sD = cov(1, 0, false), sB = cov(-1, 0, false);
+    Row24 gr{}, gs{};
+    for (int k = 0; k < 24; ++k) {
+        gr[static_cast<std::size_t>(k)] = 0.5 * (1 + s) * rA[static_cast<std::size_t>(k)] + 0.5 * (1 - s) * rC[static_cast<std::size_t>(k)];
+        gs[static_cast<std::size_t>(k)] = 0.5 * (1 + r) * sD[static_cast<std::size_t>(k)] + 0.5 * (1 - r) * sB[static_cast<std::size_t>(k)];
+    }
+    const ShapeAt a = shapeAt(g, r, s);
+    for (int k = 0; k < 24; ++k) {
+        B[0][static_cast<std::size_t>(k)] = a.ji[0][0] * gr[static_cast<std::size_t>(k)] + a.ji[0][1] * gs[static_cast<std::size_t>(k)];
+        B[1][static_cast<std::size_t>(k)] = a.ji[1][0] * gr[static_cast<std::size_t>(k)] + a.ji[1][1] * gs[static_cast<std::size_t>(k)];
+    }
+}
+struct ShellMat { double Dm, Db, Ds, nu; };
+ShellMat shellMat(const Material& mt, double t) {
+    double nu = mt.G > 0 ? mt.E / (2 * mt.G) - 1 : 0.2;
+    nu = std::clamp(nu, 0.0, 0.49);
+    const double G = mt.E / (2 * (1 + nu));
+    return {mt.E * t / (1 - nu * nu), mt.E * t * t * t / (12 * (1 - nu * nu)), 5.0 / 6.0 * G * t, nu};
+}
+void addBtDB(Mat24& K, const Row24* B, int rows, const double D[3][3], double w) {
+    for (int i = 0; i < 24; ++i)
+        for (int j = 0; j < 24; ++j) {
+            double s = 0;
+            for (int p = 0; p < rows; ++p) {
+                if (B[p][static_cast<std::size_t>(i)] == 0) continue;
+                for (int q = 0; q < rows; ++q) s += B[p][static_cast<std::size_t>(i)] * D[p][q] * B[q][static_cast<std::size_t>(j)];
+            }
+            K[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)] += s * w;
+        }
+}
+Mat24 shellLocalK(const ShellGeom& g, const Material& mt, double t) {
+    Mat24 K{};
+    const ShellMat sm = shellMat(mt, t);
+    const double Dm[3][3] = {{sm.Dm, sm.nu * sm.Dm, 0}, {sm.nu * sm.Dm, sm.Dm, 0}, {0, 0, sm.Dm * (1 - sm.nu) / 2}};
+    const double Db[3][3] = {{sm.Db, sm.nu * sm.Db, 0}, {sm.nu * sm.Db, sm.Db, 0}, {0, 0, sm.Db * (1 - sm.nu) / 2}};
+    const double Ds[3][3] = {{sm.Ds, 0, 0}, {0, sm.Ds, 0}, {0, 0, 0}};
+    const double gp = 1.0 / std::sqrt(3.0);
+    double area = 0;
+    for (double r : {-gp, gp})
+        for (double s : {-gp, gp}) {
+            const ShapeAt a = shapeAt(g, r, s);
+            Row24 Bm[3], Bb[3], Bs[2];
+            bMembrane(a, Bm);
+            bBending(a, Bb);
+            bShear(g, r, s, Bs);
+            addBtDB(K, Bm, 3, Dm, a.detJ);
+            addBtDB(K, Bb, 3, Db, a.detJ);
+            addBtDB(K, Bs, 2, Ds, a.detJ);
+            area += a.detJ;
+        }
+    // burg'ulash (θz) — kichik sun'iy bikrlik
+    const double kd = 1e-4 * mt.E * t * area;
+    for (int i = 0; i < 4; ++i) K[static_cast<std::size_t>(6 * i + 5)][static_cast<std::size_t>(6 * i + 5)] += kd;
+    return K;
+}
+std::array<double, 24> toLocal24(const ShellGeom& g, const std::array<double, 24>& ug) {
+    std::array<double, 24> ul{};
+    const Vec3 ax[3] = {g.ex, g.ey, g.ez};
+    for (int b = 0; b < 8; ++b)
+        for (int i = 0; i < 3; ++i)
+            ul[static_cast<std::size_t>(3 * b + i)] = ax[i].x * ug[static_cast<std::size_t>(3 * b)] + ax[i].y * ug[static_cast<std::size_t>(3 * b + 1)] + ax[i].z * ug[static_cast<std::size_t>(3 * b + 2)];
+    return ul;
+}
+Mat24 shellGlobalK(const ShellGeom& g, const Mat24& kl) {
+    // T: 8 ta 3×3 blok (qatorlar — ex, ey, ez); Kg = Tᵀ k T
+    double R[3][3] = {{g.ex.x, g.ex.y, g.ex.z}, {g.ey.x, g.ey.y, g.ey.z}, {g.ez.x, g.ez.y, g.ez.z}};
+    Mat24 kt{}, out{};
+    for (int i = 0; i < 24; ++i)
+        for (int bj = 0; bj < 8; ++bj)
+            for (int j = 0; j < 3; ++j) {
+                double s = 0;
+                for (int q = 0; q < 3; ++q) s += kl[static_cast<std::size_t>(i)][static_cast<std::size_t>(3 * bj + q)] * R[q][j];
+                kt[static_cast<std::size_t>(i)][static_cast<std::size_t>(3 * bj + j)] = s;
+            }
+    for (int bi = 0; bi < 8; ++bi)
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 24; ++j) {
+                double s = 0;
+                for (int q = 0; q < 3; ++q) s += R[q][i] * kt[static_cast<std::size_t>(3 * bi + q)][static_cast<std::size_t>(j)];
+                out[static_cast<std::size_t>(3 * bi + i)][static_cast<std::size_t>(j)] = s;
+            }
+    return out;
+}
+double shellArea(const ShellGeom& g) {
+    const double gp = 1.0 / std::sqrt(3.0);
+    double a = 0;
+    for (double r : {-gp, gp}) for (double s : {-gp, gp}) a += shapeAt(g, r, s).detJ;
+    return a;
 }
 
 // Lentali simmetrik matritsa: a[i][j], j ∈ [i-bw, i]
@@ -223,6 +413,15 @@ Assembled assemble(const Model& m) {
             }
         if (hi >= 0) bw = std::max(bw, hi - lo);
     }
+    for (const auto& sh : m.shells) {
+        int lo = 1 << 30, hi = -1;
+        for (int q : sh.n)
+            for (int d = 0; d < 6; ++d) {
+                const int e = A.eq[static_cast<std::size_t>(m.index(q)) * 6 + static_cast<std::size_t>(d)];
+                if (e >= 0) { lo = std::min(lo, e); hi = std::max(hi, e); }
+            }
+        if (hi >= 0) bw = std::max(bw, hi - lo);
+    }
     A.K.n = A.neq;
     A.K.bw = bw;
     A.K.a.assign(static_cast<std::size_t>(A.neq) * (bw + 1), 0.0);
@@ -244,7 +443,25 @@ Assembled assemble(const Model& m) {
             for (int c = 0; c < 12; ++c)
                 if (map[r] >= 0 && map[c] >= 0 && map[r] >= map[c]) A.K.at(map[r], map[c]) += kg[static_cast<std::size_t>(r)][static_cast<std::size_t>(c)];
     }
+    for (const auto& sh : m.shells) {
+        const ShellGeom g = shellGeom(m, sh);
+        const Mat24 kg = shellGlobalK(g, shellLocalK(g, m.mats.at(sh.mat), sh.t));
+        int map[24];
+        for (int i = 0; i < 4; ++i)
+            for (int d = 0; d < 6; ++d) map[6 * i + d] = A.eq[static_cast<std::size_t>(m.index(sh.n[static_cast<std::size_t>(i)])) * 6 + static_cast<std::size_t>(d)];
+        for (int r = 0; r < 24; ++r)
+            for (int c = 0; c < 24; ++c)
+                if (map[r] >= 0 && map[c] >= 0 && map[r] >= map[c]) A.K.at(map[r], map[c]) += kg[static_cast<std::size_t>(r)][static_cast<std::size_t>(c)];
+    }
     A.M.assign(static_cast<std::size_t>(A.neq), 0.0);
+    for (const auto& sh : m.shells) {
+        auto it = m.smass.find(sh.id);
+        if (it == m.smass.end() || it->second <= 0) continue;
+        const double mq = it->second * shellArea(shellGeom(m, sh)) / 4;
+        for (int q : sh.n)
+            for (int d = 0; d < 3; ++d)
+                if (const int e = A.eq[static_cast<std::size_t>(m.index(q)) * 6 + static_cast<std::size_t>(d)]; e >= 0) A.M[static_cast<std::size_t>(e)] += mq;
+    }
     for (const auto& [nid, mv] : m.mass) {
         const int i = m.index(nid);
         if (i < 0) continue;
@@ -364,6 +581,22 @@ StaticResult solveStatic(const Model& m) {
                 if (e >= 0) F[static_cast<std::size_t>(e)] += g;
             }
     }
+    // qobiq bosimi: tugunlarga teng ulush, lokal z bo'yicha
+    std::vector<std::array<double, 6>> pressF(m.nodes.size(), std::array<double, 6>{});
+    for (const auto& sh : m.shells) {
+        auto it = m.press.find(sh.id);
+        if (it == m.press.end()) continue;
+        const ShellGeom g = shellGeom(m, sh);
+        const Vec3 f = g.ez * (it->second * shellArea(g) / 4);
+        for (int q : sh.n) {
+            const int i = m.index(q);
+            const double fv[3] = {f.x, f.y, f.z};
+            for (int d = 0; d < 3; ++d) {
+                pressF[static_cast<std::size_t>(i)][static_cast<std::size_t>(d)] += fv[d];
+                if (const int e = A.eq[static_cast<std::size_t>(i) * 6 + static_cast<std::size_t>(d)]; e >= 0) F[static_cast<std::size_t>(e)] += fv[d];
+            }
+        }
+    }
     Band K = A.K;
     K.factor();
     std::vector<double> u = F;
@@ -389,12 +622,57 @@ StaticResult solveStatic(const Model& m) {
                 nodalF[static_cast<std::size_t>(node)][static_cast<std::size_t>((blk % 2) * 3 + j)] += s;
             }
     }
+    // qobiqlar: tugun kuchlari (reaksiyalar uchun) va markazdagi ichki kuchlar
+    for (const auto& sh : m.shells) {
+        const ShellGeom g = shellGeom(m, sh);
+        const Mat24 kl = shellLocalK(g, m.mats.at(sh.mat), sh.t);
+        std::array<double, 24> ug{};
+        for (int i = 0; i < 4; ++i)
+            for (int d = 0; d < 6; ++d) ug[static_cast<std::size_t>(6 * i + d)] = r.disp[static_cast<std::size_t>(m.index(sh.n[static_cast<std::size_t>(i)]))][static_cast<std::size_t>(d)];
+        const auto ul = toLocal24(g, ug);
+        std::array<double, 24> fl{};
+        for (int i = 0; i < 24; ++i) {
+            double sum = 0;
+            for (int j = 0; j < 24; ++j) sum += kl[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)] * ul[static_cast<std::size_t>(j)];
+            fl[static_cast<std::size_t>(i)] = sum;
+        }
+        const Vec3 ax[3] = {g.ex, g.ey, g.ez};
+        for (int i = 0; i < 4; ++i) {
+            const int nd = m.index(sh.n[static_cast<std::size_t>(i)]);
+            for (int blk = 0; blk < 2; ++blk)
+                for (int j = 0; j < 3; ++j) {
+                    double sum = 0;
+                    for (int q = 0; q < 3; ++q) sum += (j == 0 ? ax[q].x : j == 1 ? ax[q].y : ax[q].z) * fl[static_cast<std::size_t>(6 * i + 3 * blk + q)];
+                    nodalF[static_cast<std::size_t>(nd)][static_cast<std::size_t>(3 * blk + j)] += sum;
+                }
+        }
+        const ShellMat smat = shellMat(m.mats.at(sh.mat), sh.t);
+        const ShapeAt a = shapeAt(g, 0, 0);
+        Row24 Bm[3], Bb[3], Bs[2];
+        bMembrane(a, Bm);
+        bBending(a, Bb);
+        bShear(g, 0, 0, Bs);
+        auto dotB = [&](const Row24& b) { double v = 0; for (int k = 0; k < 24; ++k) v += b[static_cast<std::size_t>(k)] * ul[static_cast<std::size_t>(k)]; return v; };
+        const double ex = dotB(Bm[0]), ey = dotB(Bm[1]), gxy = dotB(Bm[2]);
+        const double kx = dotB(Bb[0]), ky = dotB(Bb[1]), kxy = dotB(Bb[2]);
+        ShellForces sf;
+        sf.Nx = smat.Dm * (ex + smat.nu * ey);
+        sf.Ny = smat.Dm * (ey + smat.nu * ex);
+        sf.Nxy = smat.Dm * (1 - smat.nu) / 2 * gxy;
+        sf.Mx = smat.Db * (kx + smat.nu * ky);
+        sf.My = smat.Db * (ky + smat.nu * kx);
+        sf.Mxy = smat.Db * (1 - smat.nu) / 2 * kxy;
+        sf.Qx = smat.Ds * dotB(Bs[0]);
+        sf.Qy = smat.Ds * dotB(Bs[1]);
+        sf.ex = g.ex; sf.ey = g.ey; sf.ez = g.ez;
+        r.shell.push_back(sf);
+    }
     for (std::size_t i = 0; i < m.nodes.size(); ++i) {
         if (std::none_of(m.nodes[i].fix.begin(), m.nodes[i].fix.end(), [](bool b) { return b; })) continue;
         std::array<double, 6> R6{};
         for (int d = 0; d < 6; ++d) {
-            double ext = 0;
-            if (auto it = m.loads.find(m.nodes[i].id); it != m.loads.end()) ext = it->second[static_cast<std::size_t>(d)];
+            double ext = pressF[i][static_cast<std::size_t>(d)];
+            if (auto it = m.loads.find(m.nodes[i].id); it != m.loads.end()) ext += it->second[static_cast<std::size_t>(d)];
             R6[static_cast<std::size_t>(d)] = m.nodes[i].fix[static_cast<std::size_t>(d)] ? nodalF[i][static_cast<std::size_t>(d)] - ext : 0.0;
         }
         r.reactions[m.nodes[i].id] = R6;
@@ -492,6 +770,9 @@ std::vector<ModeShape> solveModes(const Model& m, int count) {
     }
     double totM[3] = {0, 0, 0};
     for (const auto& [nid, mv] : m.mass) for (double& t : totM) t += mv;
+    for (const auto& sh : m.shells)
+        if (auto it = m.smass.find(sh.id); it != m.smass.end() && it->second > 0)
+            for (double& t : totM) t += it->second * shellArea(shellGeom(m, sh));
     std::vector<ModeShape> out;
     for (int c = 0; c < count; ++c) {
         ModeShape ms;
@@ -677,6 +958,50 @@ std::vector<RcCheck> designRc(const Model& m, const StaticResult& st, const std:
         out.push_back(c);
     }
     return out;
+}
+
+Model frameWithSlabs(const std::vector<double>& dx, const std::vector<double>& dy, int floors, double h, double colB, double colH, double beamB,
+                     double beamH, double E, double massPerArea, double gravityPerArea, double slabT, int div) {
+    div = std::max(1, div);
+    Model m = frameGenerator(dx, dy, 0, h, colB, colH, beamB, beamH, E, 0, 0);   // faqat materiallar va kesimlar
+    m.nodes.clear();
+    m.beams.clear();
+    std::vector<double> X{0}, Y{0};
+    for (double d : dx) for (int q = 0; q < div; ++q) X.push_back(X.back() + d / div);
+    for (double d : dy) for (int q = 0; q < div; ++q) Y.push_back(Y.back() + d / div);
+    const int nx = static_cast<int>(X.size()), ny = static_cast<int>(Y.size());
+    auto id = [&](int k, int j, int i) { return 1 + k * nx * ny + j * nx + i; };
+    auto main = [&](int j, int i) { return j % div == 0 && i % div == 0; };
+    for (int k = 0; k <= floors; ++k)
+        for (int j = 0; j < ny; ++j)
+            for (int i = 0; i < nx; ++i) {
+                if (k == 0 && !main(j, i)) continue;
+                Node n;
+                n.id = id(k, j, i);
+                n.p = {X[static_cast<std::size_t>(i)], Y[static_cast<std::size_t>(j)], k * h};
+                if (k == 0) n.fix = {true, true, true, true, true, true};
+                m.nodes.push_back(n);
+            }
+    int bid = 1, sid = 1;
+    for (int k = 1; k <= floors; ++k) {
+        for (int j = 0; j < ny; ++j)
+            for (int i = 0; i < nx; ++i) {
+                if (main(j, i)) m.beams.push_back({bid++, id(k - 1, j, i), id(k, j, i), 1, 1, {}});
+                if (j % div == 0 && i + 1 < nx) m.beams.push_back({bid++, id(k, j, i), id(k, j, i + 1), 1, 2, {}});
+                if (i % div == 0 && j + 1 < ny) m.beams.push_back({bid++, id(k, j, i), id(k, j + 1, i), 1, 2, {}});
+                if (i + 1 < nx && j + 1 < ny) {
+                    Shell sh;
+                    sh.id = sid++;
+                    sh.n = {id(k, j, i), id(k, j, i + 1), id(k, j + 1, i + 1), id(k, j + 1, i)};
+                    sh.mat = 1;
+                    sh.t = slabT;
+                    if (gravityPerArea != 0) m.press[sh.id] = -gravityPerArea;
+                    if (massPerArea > 0) m.smass[sh.id] = massPerArea;
+                    m.shells.push_back(sh);
+                }
+            }
+    }
+    return m;
 }
 
 Model frameGenerator(const std::vector<double>& dx, const std::vector<double>& dy, int floors, double h, double colB, double colH, double beamB,

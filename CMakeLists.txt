@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(AsiaCAD VERSION 0.36.0 LANGUAGES CXX)
+project(AsiaCAD VERSION 0.38.0 LANGUAGES CXX)
 
 # Dastur versiyasi — yagona manba (GUI, CLI, o'rnatuvchi)
 add_compile_definitions(ASIACAD_VERSION="${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}")
@@ -32,8 +32,13 @@ add_library(asiacad_core
   src/core/draft.cpp
   src/core/sheet.cpp
   src/core/props.cpp
+  src/lisp/lisp.cpp
+  src/lisp/lisp_builtins.cpp
+  src/lisp/lisp_host.cpp
+  src/lisp/dcl.cpp
   src/io/dxf_writer.cpp
   src/io/xlsx.cpp
+  src/io/pdf_writer.cpp
   src/io/dwg_bridge.cpp
 )
 target_include_directories(asiacad_core PUBLIC include)
@@ -68,10 +73,12 @@ add_library(asiacad_civil
   src/bim/templates.cpp
   src/bim/ifc.cpp
   src/bim/norms.cpp
+  src/bim/smeta.cpp
   src/bim/seismic.cpp
   src/bim/geotech.cpp
   src/bim/scene_export.cpp
   src/bim/facade.cpp
+  src/bim/arch.cpp
   src/bim/fem.cpp
   src/civil/excel.cpp
   src/civil/utility.cpp
@@ -91,7 +98,7 @@ target_include_directories(asiacad_civil PUBLIC include)
 target_link_libraries(asiacad_civil PUBLIC asiacad_core asiacad_io asiacad_i18n)
 
 # Buyruq interpretatori: CLI va GUI uchun umumiy
-add_library(asiacad_cmd apps/cli/interpreter.cpp apps/cli/interpreter_draft.cpp apps/cli/interpreter_survey.cpp apps/cli/interpreter_terrain.cpp apps/cli/interpreter_sheet.cpp apps/cli/interpreter_links.cpp apps/cli/interpreter_pipes.cpp apps/cli/interpreter_asbuilt.cpp apps/cli/interpreter_seismic.cpp)
+add_library(asiacad_cmd apps/cli/interpreter.cpp apps/cli/interpreter_draft.cpp apps/cli/interpreter_survey.cpp apps/cli/interpreter_terrain.cpp apps/cli/interpreter_sheet.cpp apps/cli/interpreter_links.cpp apps/cli/interpreter_pipes.cpp apps/cli/interpreter_asbuilt.cpp apps/cli/interpreter_seismic.cpp apps/cli/interpreter_lisp.cpp apps/cli/interpreter_draft2.cpp apps/cli/interpreter_arch.cpp)
 target_include_directories(asiacad_cmd PUBLIC apps/cli)
 target_link_libraries(asiacad_cmd PUBLIC asiacad_io asiacad_i18n asiacad_civil)
 
@@ -130,7 +137,7 @@ if(ASIACAD_BUILD_GUI)
       apps/gui/viewport.cpp
       apps/gui/sheet_view.cpp
       apps/gui/smart_panel.cpp
-      apps/gui/prop_panel.cpp apps/gui/bim_props.cpp
+      apps/gui/prop_panel.cpp apps/gui/bim_props.cpp apps/gui/dcl_dialog.cpp apps/gui/fem_dialog.cpp apps/gui/video_dialog.cpp
       apps/gui/theme.cpp
       apps/gui/icons.cpp
       apps/gui/command_palette.cpp apps/gui/sewer_dialog.cpp apps/gui/pipe3d_view.cpp apps/gui/model3d_view.cpp apps/gui/building_dialog.cpp apps/gui/ifc_panel.cpp apps/gui/norm_rules_dialog.cpp apps/gui/rebar_dialog.cpp apps/gui/template_sidebar.cpp apps/gui/excel_link.cpp apps/gui/drawing_set_widget.cpp apps/gui/utility_dialog.cpp apps/gui/road_dialog.cpp apps/gui/waterway_dialog.cpp apps/gui/corridor_dialog.cpp apps/gui/generator_dialogs.cpp apps/gui/templates_dialog.cpp apps/gui/survey_dialog.cpp apps/gui/earthwork_dialog.cpp apps/gui/drive_view.cpp apps/gui/drive_dialog.cpp apps/gui/draft_panels.cpp apps/gui/seismic_dialog.cpp apps/gui/shake_view.cpp
@@ -148,7 +155,7 @@ if(ASIACAD_BUILD_GUI)
 
     # GUI tutun testi (ekransiz)
     add_executable(asiacad_gui_tests tests/gui_smoke.cpp
-      apps/gui/main_window.cpp apps/gui/main_window_tabs.cpp apps/gui/viewport.cpp apps/gui/theme.cpp apps/gui/icons.cpp apps/gui/command_palette.cpp apps/gui/sewer_dialog.cpp apps/gui/pipe3d_view.cpp apps/gui/model3d_view.cpp apps/gui/building_dialog.cpp apps/gui/ifc_panel.cpp apps/gui/norm_rules_dialog.cpp apps/gui/rebar_dialog.cpp apps/gui/template_sidebar.cpp apps/gui/excel_link.cpp apps/gui/drawing_set_widget.cpp apps/gui/utility_dialog.cpp apps/gui/road_dialog.cpp apps/gui/waterway_dialog.cpp apps/gui/corridor_dialog.cpp apps/gui/generator_dialogs.cpp apps/gui/templates_dialog.cpp apps/gui/survey_dialog.cpp apps/gui/earthwork_dialog.cpp apps/gui/drive_view.cpp apps/gui/drive_dialog.cpp apps/gui/draft_panels.cpp apps/gui/sheet_view.cpp apps/gui/smart_panel.cpp apps/gui/prop_panel.cpp apps/gui/bim_props.cpp apps/gui/seismic_dialog.cpp apps/gui/shake_view.cpp apps/gui/res/asiacad.qrc)
+      apps/gui/main_window.cpp apps/gui/main_window_tabs.cpp apps/gui/viewport.cpp apps/gui/theme.cpp apps/gui/icons.cpp apps/gui/command_palette.cpp apps/gui/sewer_dialog.cpp apps/gui/pipe3d_view.cpp apps/gui/model3d_view.cpp apps/gui/building_dialog.cpp apps/gui/ifc_panel.cpp apps/gui/norm_rules_dialog.cpp apps/gui/rebar_dialog.cpp apps/gui/template_sidebar.cpp apps/gui/excel_link.cpp apps/gui/drawing_set_widget.cpp apps/gui/utility_dialog.cpp apps/gui/road_dialog.cpp apps/gui/waterway_dialog.cpp apps/gui/corridor_dialog.cpp apps/gui/generator_dialogs.cpp apps/gui/templates_dialog.cpp apps/gui/survey_dialog.cpp apps/gui/earthwork_dialog.cpp apps/gui/drive_view.cpp apps/gui/drive_dialog.cpp apps/gui/draft_panels.cpp apps/gui/sheet_view.cpp apps/gui/smart_panel.cpp apps/gui/prop_panel.cpp apps/gui/bim_props.cpp apps/gui/seismic_dialog.cpp apps/gui/shake_view.cpp apps/gui/dcl_dialog.cpp apps/gui/fem_dialog.cpp apps/gui/video_dialog.cpp apps/gui/res/asiacad.qrc)
     target_include_directories(asiacad_gui_tests PRIVATE apps/gui)
     target_link_libraries(asiacad_gui_tests PRIVATE asiacad_cmd Qt6::Widgets Qt6::OpenGLWidgets)
     target_compile_definitions(asiacad_gui_tests PRIVATE ASIACAD_I18N_DIR="${ASIACAD_I18N_SRC}" ASIACAD_EXAMPLES_DIR="${CMAKE_SOURCE_DIR}/examples")

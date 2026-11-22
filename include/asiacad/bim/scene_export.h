@@ -39,10 +39,27 @@ struct SceneLabel {               // Unreal: lot/bino yorliqlari (chizmadagi mat
     Vec3 p;
 };
 
+// Kamera yo'li (video): kalit kadrlar — vaqt (s), ko'z va qarash nuqtasi (asl koordinatalarda)
+struct CameraKey { double t = 0; Vec3 eye, target; };
+struct CameraPath {
+    std::string name = "AC_Kamera_Yol";
+    double fps = 30, focal = 24;
+    std::vector<CameraKey> keys;
+    double duration() const { return keys.empty() ? 0.0 : keys.back().t; }
+};
+// Chiziq bo'ylab yurish: ko'z balandligi (yo'l nuqtalari z ga qo'shiladi), tezlik m/s, oldinga qarash masofasi, kalitlar oralig'i (s)
+CameraPath walkPath(const std::vector<Vec3>& pts, double eyeH, double speed, double lookAhead, double keyEvery = 0.5);
+// Dron: markaz atrofida aylanish (radius, balandlik, davomiylik s, qarash nuqtasi balandligi)
+CameraPath orbitPath(const Vec3& center, double radius, double height, double seconds, double targetZ, double keyEvery = 0.5);
+// Oraliq kadr (chiziqli interpolyatsiya)
+CameraKey cameraAt(const CameraPath& p, double t);
+void writeCameraCsv(const CameraPath& p, const Vec3& origin, const std::string& csvPath);   // t;ex;ey;ez;tx;ty;tz (origin ayirilgan)
+
 struct Scene {
     std::vector<SceneMesh> meshes;        // material bo'yicha bittadan
     std::vector<SceneMarker> markers;
     std::vector<SceneLabel> labels;
+    std::vector<CameraPath> paths;        // video: Unreal — Level Sequence, 3ds Max — animatsiyali kamera
     Vec3 origin{0, 0, 0};                 // eksportda ayiriladi (katta koordinatalar render dasturlarida titraydi)
     void add(const std::string& material, const std::array<Vec3, 3>& t);
     std::size_t triangleCount() const;

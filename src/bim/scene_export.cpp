@@ -387,6 +387,68 @@ bool maxRendererFromKey(const std::string& key, MaxRenderer& out) {
     return true;
 }
 
+CameraPath walkPath(const std::vector<Vec3>& pts, double eyeH, double speed, double lookAhead, double keyEvery) {
+    CameraPath p;
+    if (pts.size() < 2 || speed <= 0) return p;
+    std::vector<double> acc{0};
+    for (std::size_t i = 1; i < pts.size(); ++i) acc.push_back(acc.back() + pts[i].distanceTo(pts[i - 1]));
+    const double L = acc.back();
+    if (L <= 0) return p;
+    auto at = [&](double d) {
+        d = std::clamp(d, 0.0, L);
+        std::size_t i = 1;
+        while (i + 1 < acc.size() && acc[i] < d) ++i;
+        const double f = acc[i] > acc[i - 1] ? (d - acc[i - 1]) / (acc[i] - acc[i - 1]) : 0;
+        return pts[i - 1] + (pts[i] - pts[i - 1]) * f;
+    };
+    const double T = L / speed;
+    const int n = std::max(2, static_cast<int>(std::ceil(T / std::max(0.05, keyEvery))) + 1);
+    for (int k = 0; k < n; ++k) {
+        const double t = T * k / (n - 1), d = t * speed;
+        CameraKey ck;
+        ck.t = t;
+        ck.eye = at(d) + Vec3{0, 0, eyeH};
+        // oxirida yo'nalish saqlanadi
+        Vec3 ahead = at(d + lookAhead);
+        if (d + lookAhead > L) { const Vec3 dir = at(L) - at(std::max(0.0, L - lookAhead)); ahead = at(d) + dir; }
+        ck.target = ahead + Vec3{0, 0, eyeH};
+        p.keys.push_back(ck);
+    }
+    return p;
+}
+
+CameraPath orbitPath(const Vec3& c, double radius, double height, double seconds, double targetZ, double keyEvery) {
+    CameraPath p;
+    p.name = "AC_Kamera_Dron_Aylanish";
+    p.focal = 30;
+    const int n = std::max(8, static_cast<int>(std::ceil(seconds / std::max(0.05, keyEvery))) + 1);
+    for (int k = 0; k < n; ++k) {
+        const double t = seconds * k / (n - 1), a = 2 * 3.14159265358979323846 * k / (n - 1) - 3.14159265358979323846 / 4;
+        p.keys.push_back({t, {c.x + radius * std::cos(a), c.y + radius * std::sin(a), c.z + height}, {c.x, c.y, targetZ}});
+    }
+    return p;
+}
+
+CameraKey cameraAt(const CameraPath& p, double t) {
+    if (p.keys.empty()) return {};
+    if (t <= p.keys.front().t) return p.keys.front();
+    if (t >= p.keys.back().t) return p.keys.back();
+    std::size_t i = 1;
+    while (i < p.keys.size() && p.keys[i].t < t) ++i;
+    const auto &a = p.keys[i - 1], &b = p.keys[i];
+    const double f = b.t > a.t ? (t - a.t) / (b.t - a.t) : 0;
+    return {t, a.eye + (b.eye - a.eye) * f, a.target + (b.target - a.target) * f};
+}
+
+void writeCameraCsv(const CameraPath& p, const Vec3& o, const std::string& csvPath) {
+    std::ofstream f(csvPath, std::ios::binary);
+    if (!f) throw Error("export.err.write", {csvPath});
+    f << "# " << p.name << std::format(" fps={:g} focal={:g}mm\n", p.fps, p.focal) << "t;ex;ey;ez;tx;ty;tz\n";
+    for (const auto& k : p.keys)
+        f << std::format("{:.3f};{:.3f};{:.3f};{:.3f};{:.3f};{:.3f};{:.3f}\n", k.t, k.eye.x - o.x, k.eye.y - o.y, k.eye.z - o.z, k.target.x - o.x, k.target.y - o.y,
+                         k.target.z - o.z);
+}
+
 void writeMaxScript(const Scene& s, const std::string& msPath, const MaxScriptOptions& o) {
     std::ofstream f(msPath, std::ios::binary);
     if (!f) throw Error("export.err.write", {msPath});
@@ -493,6 +555,25 @@ void writeMaxScript(const Scene& s, const std::string& msPath, const MaxScriptOp
          "  ) else (\n"
          "    Point name:(\"AC_\" + mk[1] + \"_\" + (i as string) + \"_h\" + (mk[3] as string)) pos:mk[2] size:(if mk[3] > 0 then mk[3] else 1) box:true cross:false\n"
          "  )\n)\n";
+    // video: animatsiyali kameralar (kamera yo'li)
+    for (std::size_t pi = 0; pi < s.paths.size(); ++pi) {
+        const auto& cp = s.paths[pi];
+        if (cp.keys.empty()) continue;
+        const std::string cv = "camYol" + std::to_string(pi + 1);
+        const auto& k0 = cp.keys.front();
+        f << std::format("local {} = Physical name:\"{}\" pos:[{:.3f},{:.3f},{:.3f}] target:(Targetobject pos:[{:.3f},{:.3f},{:.3f}])\n", cv, cp.name,
+                         k0.eye.x - s.origin.x, k0.eye.y - s.origin.y, k0.eye.z - s.origin.z, k0.target.x - s.origin.x, k0.target.y - s.origin.y,
+                         k0.target.z - s.origin.z)
+          << std::format("{}.focal_length_mm = {:g}\nframeRate = {}\nanimationRange = interval 0 {}\n", cv, cp.focal, static_cast<int>(cp.fps),
+                         static_cast<int>(std::ceil(cp.duration() * cp.fps)))
+          << "animate on (\n";
+        for (const auto& k : cp.keys)
+            f << std::format("  at time {} ({}.pos = [{:.3f},{:.3f},{:.3f}]; {}.target.pos = [{:.3f},{:.3f},{:.3f}])\n", static_cast<int>(std::lround(k.t * cp.fps)), cv,
+                             k.eye.x - s.origin.x, k.eye.y - s.origin.y, k.eye.z - s.origin.z, cv, k.target.x - s.origin.x, k.target.y - s.origin.y,
+                             k.target.z - s.origin.z);
+        f << ")\n"
+          << std::format("-- video: 3dsmaxcmd sahna.max -camera:{} -start:0 -end:{} -o:kadr_####.png\n", cp.name, static_cast<int>(std::ceil(cp.duration() * cp.fps)));
+    }
     f << std::format("renderWidth = {}\nrenderHeight = {}\n", o.width, o.height);
     if (corona) f << "try (renderers.current = CoronaRenderer()) catch ()\n";
     else if (vray) f << "try (renderers.current = V_Ray_GPU() ) catch (try (renderers.current = V_Ray()) catch ())\n";
@@ -717,6 +798,47 @@ void writeUnrealScript(const Scene& s, const std::string& pyPath, const UnrealOp
          "        b.static_mesh_component.set_static_mesh(mesh); b.set_actor_scale3d(tr.scale3d)\n"
          "if not assets: unreal.log_warning(\"AsiaCAD: aktivlar jadvali bo'sh — daraxt/odam/avto qo'yilmadi (\" + str(len(MARKERS)) + \" marker)\")\n\n";
     // yorliqlar
+    if (!s.paths.empty()) {
+        f << "# 5b) Video: kamera yo'llari — Level Sequence (Sequencer), kamera kesimi; render — Movie Render Queue\n"
+             "def make_sequence(name, fps, keys, focal):\n"
+             "    try:\n"
+             "        old = DEST + \"/\" + name\n"
+             "        if eal.does_asset_exist(old): eal.delete_asset(old)\n"
+             "        seq = at.create_asset(name, DEST, unreal.LevelSequence, unreal.LevelSequenceFactoryNew())\n"
+             "        seq.set_display_rate(unreal.FrameRate(int(fps), 1))\n"
+             "        end = int(math.ceil(keys[-1][0] * fps))\n"
+             "        seq.set_playback_start(0); seq.set_playback_end(end)\n"
+             "        cam = spawn(unreal.CineCameraActor, unreal.Vector(*keys[0][1:4]), unreal.Rotator(0, 0, 0), name)\n"
+             "        setp(cam.get_cine_camera_component(), \"current_focal_length\", float(focal))\n"
+             "        b = seq.add_possessable(cam)\n"
+             "        tr = b.add_track(unreal.MovieScene3DTransformTrack)\n"
+             "        sec = tr.add_section(); sec.set_range(0, end)\n"
+             "        ch = sec.get_all_channels()\n"
+             "        for (t, x, y, z, tx, ty, tz) in keys:\n"
+             "            fr = unreal.FrameNumber(int(round(t * fps)))\n"
+             "            dx, dy, dz = tx - x, ty - y, tz - z\n"
+             "            yaw = math.degrees(math.atan2(dy, dx)); pitch = math.degrees(math.atan2(dz, math.hypot(dx, dy)))\n"
+             "            for c, v in ((ch[0], x), (ch[1], y), (ch[2], z), (ch[3], 0.0), (ch[4], pitch), (ch[5], yaw)):\n"
+             "                c.add_key(fr, v)\n"
+             "        try: cut = seq.add_track(unreal.MovieSceneCameraCutTrack)\n"
+             "        except Exception: cut = seq.add_master_track(unreal.MovieSceneCameraCutTrack)\n"
+             "        cs = cut.add_section(); cs.set_range(0, end)\n"
+             "        try: cs.set_camera_binding_id(seq.get_binding_id(b))\n"
+             "        except Exception:\n"
+             "            cs.set_camera_binding_id(unreal.MovieSceneSequenceExtensions.get_portable_binding_id(seq, seq, b))\n"
+             "        eal.save_loaded_asset(seq)\n"
+             "        print(\"AsiaCAD: sequence\", name, end, \"kadr\")\n"
+             "    except Exception as e:\n"
+             "        print(\"AsiaCAD: sequence xatosi\", name, e)\n";
+        for (const auto& cp : s.paths) {
+            f << "make_sequence(\"" << esc(cp.name) << "\", " << std::format("{:g}", cp.fps) << ", [\n";
+            for (const auto& k : cp.keys)
+                f << std::format("    ({:.3f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}, {:.1f}),\n", k.t, (k.eye.x - s.origin.x) * 100, -(k.eye.y - s.origin.y) * 100,
+                                 (k.eye.z - s.origin.z) * 100, (k.target.x - s.origin.x) * 100, -(k.target.y - s.origin.y) * 100, (k.target.z - s.origin.z) * 100);
+            f << "], " << std::format("{:g}", cp.focal) << ")\n";
+        }
+        f << "\n";
+    }
     f << "# 6) Yorliqlar (lot nomlari)\nLABELS = [\n";
     for (const auto& l : s.labels)
         f << std::format("    (\"{}\", {:.1f}, {:.1f}, {:.1f}),\n", esc(l.text), (l.p.x - s.origin.x) * 100, -(l.p.y - s.origin.y) * 100, (l.p.z - s.origin.z) * 100);

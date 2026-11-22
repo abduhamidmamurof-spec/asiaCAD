@@ -58,6 +58,7 @@ public:
     QTableWidget* summaryTable() const { return sum_; }
     QTreeWidget* tree() const { return tree_; }
     bool exportXlsx(const QString& path) const;
+    void runSmeta();   // BIM modeldan smeta (5D): narxlar bazasi (ixtiyoriy) -> Excel
     bool exportStakeout(const QString& path) const;    // razbivka jadvali (Excel)
     QTableWidget* elementTable() const { return elems_; }
     QLineEdit* searchEdit() const { return search_; }
@@ -121,7 +122,7 @@ private:
     QComboBox* normFilter_ = nullptr;
     QCheckBox *normColor_ = nullptr, *normLabels_ = nullptr;
     QTableWidget* normTable_ = nullptr;
-    QPushButton *add_ = nullptr, *remove_ = nullptr, *export_ = nullptr, *show3d_ = nullptr, *close_ = nullptr;
+    QPushButton *add_ = nullptr, *remove_ = nullptr, *export_ = nullptr, *smeta_ = nullptr, *show3d_ = nullptr, *close_ = nullptr;
     bool filling_ = false;
 };
 

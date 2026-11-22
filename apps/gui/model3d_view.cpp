@@ -657,6 +657,34 @@ QMatrix4x4 Model3DView::projMatrix() const {
     return m;
 }
 
+void Model3DView::setCamera(const P3& e, const P3& t) {
+    const QVector3D eye(float(e.x - ox_), float(e.y - oy_), float(e.z - oz_)), tg(float(t.x - ox_), float(t.y - oy_), float(t.z - oz_));
+    QVector3D d = tg - eye;
+    const float len = d.length();
+    if (len < 1e-6f) return;
+    d /= len;
+    ortho_ = false;
+    target_ = tg;
+    dist_ = len;
+    pitch_ = std::asin(std::clamp(-double(d.z()), -1.0, 1.0)) / kDeg;
+    yaw_ = std::atan2(double(d.x()), double(d.y())) / kDeg;
+    userMoved_ = true;
+    update();
+}
+
+bool Model3DView::sceneBounds(P3& mn, P3& mx) const {
+    QVector3D a(1e30f, 1e30f, 1e30f), b(-1e30f, -1e30f, -1e30f);
+    for (const auto& o : objs_) {
+        if (o.hidden || hiddenCats_.count(o.category) || o.bmin.x() > o.bmax.x()) continue;
+        a = QVector3D(std::min(a.x(), o.bmin.x()), std::min(a.y(), o.bmin.y()), std::min(a.z(), o.bmin.z()));
+        b = QVector3D(std::max(b.x(), o.bmax.x()), std::max(b.y(), o.bmax.y()), std::max(b.z(), o.bmax.z()));
+    }
+    if (a.x() > b.x()) return false;
+    mn = {a.x() + ox_, a.y() + oy_, a.z() + oz_};
+    mx = {b.x() + ox_, b.y() + oy_, b.z() + oz_};
+    return true;
+}
+
 void Model3DView::resetView() {
     yaw_ = 45;
     pitch_ = 30;

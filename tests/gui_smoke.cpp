@@ -1,3 +1,9 @@
+#include "video_dialog.h"
+#include "prop_panel.h"
+#include "fem_dialog.h"
+#include <sstream>
+#include "dcl_dialog.h"
+#include <QTemporaryDir>
 // GUI tutun testi: oyna ko'rsatilmaydi (offscreen), lekin asboblar -> Interpreter -> Document zanjiri
 // to'liq tekshiriladi. ctest orqali QT_QPA_PLATFORM=offscreen bilan ishga tushadi.
 #include "main_window.h"
@@ -1712,6 +1718,9 @@ int main(int argc, char** argv) {
             const auto wb = xlsx::load(xl.toStdString());
             CHECK(wb.sheets.size() == 3 && wb.sheets[2].rows.size() == 7);
             QFile::remove(xl);
+            // smeta (5D) tugmasi panelda, matni tilga mos
+            auto* sb = p->findChild<QPushButton*>("ifcSmeta");
+            CHECK(sb && sb->text() == QString::fromStdString(loc.tr("gui.ifc.smeta")) && !sb->toolTip().isEmpty());
             // tanlash: element xossalari
             v->setView(Model3DView::Top);
             v->fit();
@@ -2033,6 +2042,108 @@ int main(int argc, char** argv) {
             CHECK(glassPx > 100);
             if (shot) sd.grab().save(QString(shot) + "_real.png");
         }
+    }
+    {   // AutoLISP DCL: dialog Qt oynasi bo'lib ochiladi, qiymatlar LISP ga qaytadi
+        std::printf("lisp dcl dialog\n");
+        QTemporaryDir td;
+        const QString dclPath = td.filePath("t.dcl");
+        {
+            QFile f(dclPath);
+            f.open(QIODevice::WriteOnly);
+            f.write("q : dialog { label = \"Sinov\"; : boxed_column { label = \"P\"; : edit_box { key = \"r\"; label = \"R:\"; value = \"5\"; }"
+                    " : popup_list { key = \"qat\"; } : toggle { key = \"m\"; label = \"M\"; } } ok_cancel; }");
+        }
+        std::ostringstream lo;
+        asiacad::lisp::Lisp L(lo);
+        asiacad::lisp::DclRuntime rt(L);
+        rt.install();
+        asiacad::gui::DclQtUi ui(nullptr, [&](const char* k) { return QString::fromStdString(loc.tr(k)); });
+        rt.ui = &ui;
+        L.evalString("(setq id (load_dialog \"" + dclPath.toStdString() + "\"))");
+        CHECK(L.toString(L.evalString("(new_dialog \"q\" id)"), true) == "T");
+        L.evalString("(start_list \"qat\") (mapcar 'add_list '(\"0\" \"A\" \"B\")) (end_list) (set_tile \"qat\" \"2\")"
+                     "(action_tile \"accept\" \"(setq r (atof (get_tile \\\"r\\\")) q (get_tile \\\"qat\\\") m (get_tile \\\"m\\\")) (done_dialog 1)\")");
+        int comboItems = 0;
+        QString okText;
+        QTimer::singleShot(50, [&] {
+            QWidget* d = ui.lastDialog;
+            if (!d) return;
+            if (auto* c = d->findChild<QComboBox*>()) comboItems = c->count();
+            if (auto* e = d->findChild<QLineEdit*>()) { e->setText("7.5"); emit e->editingFinished(); }
+            if (auto* t = d->findChild<QCheckBox*>()) t->setChecked(true);
+            for (auto* b : d->findChildren<QPushButton*>())
+                if (b->text() == QString::fromStdString(loc.tr("gui.dcl.ok"))) { okText = b->text(); b->click(); break; }
+        });
+        CHECK(L.toString(L.evalString("(start_dialog)"), true) == "1");
+        CHECK(comboItems == 3 && !okText.isEmpty());
+        CHECK(L.toString(L.evalString("(list r q m)"), true) == "(7.5 \"2\" \"1\")");
+    }
+    {   // Statika (FEM): ramka + qobiq plitalar, hisob, 3D ko'rinish
+        std::printf("fem dialog\n");
+        asiacad::gui::FemDialog fd(loc);
+        fd.setGenerator("6x2", "6", 2, 0.2);
+        fd.setDesign(true);
+        CHECK(fd.compute());
+        CHECK(fd.model() && !fd.model()->shells.empty());
+        CHECK(fd.report().split('\n').size() >= 6);
+        fd.resize(1100, 700);
+        fd.show();
+        QApplication::processEvents();
+        fd.view()->setShow(0);
+        const QImage im = fd.view()->grab().toImage();
+        CHECK(fd.view()->coloredBeams() > 0);
+        int colored = 0;
+        for (int y = 0; y < im.height(); y += 2)
+            for (int x = 0; x < im.width(); x += 2) { const QColor c = im.pixelColor(x, y); if (c.green() > 150 && c.red() < 120) ++colored; }
+        CHECK(colored > 50);
+        if (const char* shot = std::getenv("ASIACAD_FEM_SHOT")) fd.grab().save(shot);
+        fd.view()->setShow(2);   // 1-shakl animatsiyasi
+        QApplication::processEvents();
+        fd.setGenerator("abc", "6", 2, 0.2);
+        CHECK(!fd.compute());
+    }
+    {   // ARMODEL: 3D da element tanlash -> Xossalar -> tur/belgi tuzatish (AREDIT), qaytarish
+        std::printf("armodel edit\n");
+        MainWindow w(loc);
+        w.resize(1400, 900);
+        w.show();
+        QApplication::processEvents();
+        CHECK(w.runLine(QString("ARMODEL \"%1\"").arg(QString(ASIACAD_EXAMPLES_DIR) + "/ar_loyiha/ar_loyiha.dxf")));
+        auto* v3 = w.findChild<asiacad::gui::Model3DView*>("view3d");
+        CHECK(v3 != nullptr);
+        if (v3) {
+            emit v3->objectPicked("ar:0");
+            QApplication::processEvents();
+            auto* pp = w.arPropsPanel();
+            CHECK(pp && pp->isVisible() && pp->has("z1"));
+            if (pp) {
+                const double z1 = pp->value("z1").toDouble();
+                CHECK(pp->edit("z1", QString::number(z1 + 0.5, 'f', 3)));
+                CHECK(std::abs(pp->value("z1").toDouble() - (z1 + 0.5)) < 1e-6);
+                CHECK(pp->trigger("undo"));
+                CHECK(std::abs(pp->value("z1").toDouble() - z1) < 1e-6);
+            }
+        }
+    }
+    {   // Video: kamera yo'li 3D da (yurish va dron), kadrlarni yozib olish
+        std::printf("video path\n");
+        MainWindow w(loc);
+        w.resize(1300, 850);
+        w.show();
+        QApplication::processEvents();
+        for (const char* l : {"WALL 0,0 10,0 10,8 0,8 CLOSE T=0.3", "WINDOW 5,0 W=2", "AR3D FLOORS=2", "PLINE -6,-6 16,-6 16,14"}) CHECK(w.runLine(l));
+        w.viewport()->setSelection({w.document().ids().back()});
+        auto* vd = w.openVideo();
+        QApplication::processEvents();
+        CHECK(vd->buildPath());
+        CHECK(vd->path().duration() > 20 && vd->path().keys.size() > 50);
+        vd->setSource(1);
+        CHECK(vd->buildPath() && std::abs(vd->path().duration() - 20) < 1e-6);
+        QTemporaryDir td;
+        const int n = vd->record(td.filePath("v.png"), 5);
+        CHECK(n == 5);
+        CHECK(QFile::exists(td.filePath("v_kadrlar/kadr_00004.png")));
+        vd->close();
     }
     std::printf("\nGUI: %d tekshiruv, %d xato\n", checks, failures);
     return failures == 0 ? 0 : 1;
